@@ -1,0 +1,115 @@
+name: Cursor Leaderboard — Weekly Automation
+
+on:
+  schedule:
+    # Monday 01:30 UTC = Monday 07:00 IST
+    - cron: "30 1 * * 1"
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  build-leaderboard:
+    name: Build & Deploy Leaderboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python setup ────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── 3. Playwright (browser automation for report download) ─────────────
+      - name: Install Playwright + Chromium
+        run: |
+          pip install playwright
+          playwright install chromium --with-deps
+
+      # ── 4. Download reports from Cursor dashboard ─────────────────────────
+      - name: Download Cursor reports
+        env:
+          CURSOR_EMAIL: ${{ secrets.CURSOR_EMAIL }}
+          CURSOR_PASSWORD: ${{ secrets.CURSOR_PASSWORD }}
+        run: |
+          echo "::group::Download Cursor reports"
+          python scripts/download_reports.py
+          echo "::endgroup::"
+          echo "✅ Reports downloaded"
+          ls -lh data/raw/
+
+      # ── 5. Merge data ─────────────────────────────────────────────────────
+      - name: Merge data files
+        run: |
+          echo "::group::merge_data.py"
+          python scripts/merge_data.py
+          echo "::endgroup::"
+          echo "✅ Merge complete"
+
+      # ── 6. Score users ────────────────────────────────────────────────────
+      - name: Score users & generate top-10 CSV
+        env:
+          PROMPTS_API_KEY: ${{ secrets.PROMPTS_API_KEY }}
+        run: |
+          echo "::group::cursor_token_analysis.py"
+          python scripts/cursor_token_analysis_final_2.py
+          echo "::endgroup::"
+          echo "✅ Scoring complete"
+          cat top_10_cursor_users_final.csv
+
+      # ── 7. Generate HTML leaderboard ─────────────────────────────────────
+      - name: Generate leaderboard HTML
+        run: |
+          echo "::group::generate_leaderboard.py"
+          python scripts/generate_leaderboard.py top_10_cursor_users_final.csv leaderboard.html
+          echo "::endgroup::"
+          echo "✅ HTML generated"
+          wc -l leaderboard.html
+
+      # ── 8. Upload artifacts (always, even on failure) ─────────────────────
+      - name: Upload leaderboard artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaderboard-${{ github.run_id }}
+          path: |
+            leaderboard.html
+            top_10_cursor_users_final.csv
+          retention-days: 30
+
+      # ── 9. Deploy to GitHub Pages ──────────────────────────────────────────
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+          publish_branch: gh-pages
+          include_files: leaderboard.html
+          commit_message: "leaderboard: auto-update ${{ github.run_id }}"
+
+      # ── 10. Notify on success ─────────────────────────────────────────────
+      - name: Notify Slack — success
+        if: success() && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"✅ *Cursor Leaderboard updated* — $(date '+%A %d %b %Y')\nhttps://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/leaderboard.html\"}"
+
+      # ── 11. Notify on failure ─────────────────────────────────────────────
+      - name: Notify Slack — failure
+        if: failure() && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"❌ *Cursor Leaderboard FAILED* — $(date '+%A %d %b %Y')\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
