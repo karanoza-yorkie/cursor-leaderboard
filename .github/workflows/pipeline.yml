@@ -1,5 +1,8 @@
 name: Cursor Weekly Pipeline
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: "0 3 * * 1"   # Monday 3 AM UTC (~8:30 AM IST)
@@ -15,6 +18,8 @@ jobs:
       # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       # --------------------------------------------------
       # 2. Setup Python
