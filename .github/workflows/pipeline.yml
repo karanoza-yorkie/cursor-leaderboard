@@ -51,6 +51,11 @@ jobs:
         run: |
           python src/pipeline.py
 
+      - name: Prepare GitHub Pages file
+        run: |
+          mkdir -p docs
+          cp output/latest/leaderboard.html docs/index.html
+
       # --------------------------------------------------
       # 6. Commit results (data + output)
       # --------------------------------------------------
