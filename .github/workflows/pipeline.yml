@@ -64,7 +64,7 @@ jobs:
           git config --global user.name "automation-bot"
           git config --global user.email "bot@users.noreply.github.com"
 
-          git add data/ output/ logs/
+          git add data/ output/ logs/ docs/
           git commit -m "Auto update weekly leaderboard" || echo "No changes to commit"
 
           git push
