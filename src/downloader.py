@@ -355,7 +355,7 @@ def run_download():
     log.info("leaderboard→ %s", leaderboard_file)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context(
             storage_state=STATE_FILE,
             accept_downloads=True,
