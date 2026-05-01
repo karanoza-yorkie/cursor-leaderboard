@@ -1,7 +1,7 @@
 Email,Name,Agent Completions,Agent Lines,Tab Completions,Tab Lines,Ai Lines,Favorite Model
 parth.r@york.ie,Parth Raninga,249,22018,1,2,22020,default
 jaydip@york.ie,Jaydip Makwana,431,19675,28,63,19738,default
-prithvirajsinh@york.ie,Prithvirajsinh Jadav,192,16234,77,161,16395,default
+prithvirajsinh@york.ie,Prithvirajsinh Jadav,217,17971,83,178,18149,default
 sujan@york.ie,Sujan Patel,83,11244,1,2,11246,claude-4.6-sonnet-medium-thinking
 kishan.a@york.ie,Kishan Aghera,257,9039,152,393,9432,default
 vraj.g@york.ie,Vraj Gangani,149,9094,21,40,9134,default
@@ -34,8 +34,8 @@ akshat@york.ie,Akshat Parekh,297,3165,3,6,3171,composer-2-fast
 shikha@york.ie,Shikha Bhatt,77,3084,15,31,3115,default
 alka.t@york.ie,Alka Tiwari,37,2939,0,0,2939,default
 parth.t@york.ie,Parth B Thakkar,65,1838,505,1093,2931,gpt-5.4-medium
+meetbharadva@york.ie,Meet Bharadva,47,2865,14,28,2893,default
 suraj.a@york.ie,Suraj Aherrao,22,2524,37,87,2611,composer-2-fast
-meetbharadva@york.ie,Meet Bharadva,40,2376,9,18,2394,default
 ahmad.a@york.ie,Ahmad Ansari,85,2386,1,2,2388,default
 kaushalm@york.ie,Kaushal Modi,59,2270,11,32,2302,default
 jayendra.p@york.ie,Jayendra Parmar,39,1969,151,316,2285,default
@@ -54,8 +54,8 @@ prem.j@york.ie,Prem Jaisinghani,31,1338,112,228,1566,default
 hitesh@york.ie,Hitesh Khandar,38,1541,0,0,1541,default
 prashant.p@york.ie,Prashant Paun,29,1155,95,226,1381,default
 anuj@york.ie,Anuj Patel,33,1173,52,154,1327,default
+arpan@york.ie,Arpan Bansal,23,1202,0,0,1202,default
 zeel@york.ie,Zeel Pathak,24,1122,20,40,1162,default
-arpan@york.ie,Arpan Bansal,20,1142,0,0,1142,default
 nishant@york.ie,Nishant Soni,15,1100,15,30,1130,composer-2-fast
 smit.k@york.ie,Smit Kalariya,22,1004,17,31,1035,default
 sagar@york.ie,Sagar Kalani,22,799,47,108,907,claude-4.5-haiku-thinking
