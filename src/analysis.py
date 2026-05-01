@@ -157,7 +157,17 @@ def run_analysis():
         0.5 * final_df["quality_norm"]
     ).round(3)
 
-    top_10 = final_df.sort_values("final_score", ascending=False).head(10)
+    MIN_AI_LINES = final_df["Total_AI_Lines"].quantile(0.50)   # dynamic
+    MIN_COST = 10
+    MIN_PROMPTS = 20
+
+    eligible_users = final_df[
+        (final_df["Total_AI_Lines"] >= MIN_AI_LINES) &
+        (final_df["Total_Cost"] >= MIN_COST) &
+        (final_df["Total_Prompts"] >= MIN_PROMPTS)
+    ]
+
+    top_10 = eligible_users.sort_values("final_score", ascending=False).head(10)
 
     # ============================================================
     # STEP 5: SAVE OUTPUT
