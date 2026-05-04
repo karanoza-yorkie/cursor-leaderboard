@@ -353,7 +353,7 @@ def run_download():
     start_label = start.strftime("%d%b")
     end_label   = end.strftime("%d%b")
 
-    #     week_folder = get_week_folder()
+    week_folder = get_week_folder()
     RAW_DIR = Path(f"data/raw/{week_folder}")
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
