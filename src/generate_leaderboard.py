@@ -31,6 +31,37 @@ HISTORY_HTML = f"output/history/{week_folder}.html"
 # ── Helpers (UNCHANGED) ──────────────────────────────────────────────────────
 RANK_SUFFIX = {1: "st", 2: "nd", 3: "rd"}
 
+API_KEY = os.getenv("HUB_API_KEY")
+
+def fetch_photo_url(email):
+    if not email:
+        return ""
+
+    email = quote(email)
+
+    url = f"https://api.hub.york.ie/api/external/interview/get-profile-pic/{email}"
+
+    headers = {
+        "x-api-key": API_KEY,
+        "Authorization": f"Bearer {API_KEY}",
+        "Origin": "https://support.yorkdevs.link/"
+    }
+
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+
+        if res.status_code != 200:
+            return ""
+
+        data = res.json()
+
+        # ✅ YOUR ACTUAL STRUCTURE
+        return data.get("data", {}).get("url", "")
+
+    except Exception as e:
+        print(f"⚠️ Error fetching image for {email}: {e}")
+        return ""
+
 def rank_suffix(n):
     return RANK_SUFFIX.get(n, "th")
 
@@ -75,12 +106,12 @@ def build_card(row):
     quality_score = float(row.get("quality_norm", 0))
     active_days = row.get("Active_Days", "—")
     final_score = float(row.get("final_score", 0))
-    photo_path  = row.get("photo_path", "")
-    photo_b64   = photo_to_base64(photo_path)
+    email = row.get("Email", "").strip().lower()
+    photo_url = fetch_photo_url(email)
 
     photo_html = (
-        f'<img src="{photo_b64}" alt="{name}" class="avatar-img" />'
-        if photo_b64 else
+        f'<img src="{photo_url}" alt="{name}" class="avatar-img" />'
+        if photo_url else
         f'<div class="avatar-placeholder">{name[0]}</div>'
     )
 
