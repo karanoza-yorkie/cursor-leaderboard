@@ -234,8 +234,8 @@ def build_html(rows):
   }}
 
   .brand-logo {{
-    width: 40px;
-    height: 40px;
+    width: 10px;
+    height: 10px;
     object-fit: contain;
     }}
 
