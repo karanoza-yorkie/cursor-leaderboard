@@ -129,13 +129,9 @@ def build_card(row):
     <!-- Header bar -->
     <div class="card-header">
       <div class="brand">
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <rect width="36" height="36" rx="6" fill="#1a3a2a"/>
-          <path d="M8 18 L18 8 L28 18 L18 28 Z" stroke="#22c55e" stroke-width="2" fill="none"/>
-          <path d="M12 18 L18 12 L24 18 L18 24 Z" fill="#22c55e" opacity="0.6"/>
-        </svg>
-        <span class="brand-name">AI Leverage</span>
-      </div>
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">AI Leverage</span>
+    </div>
       <div class="badge-weekly">
         <span>Weekly</span>
         <span class="badge-bold">Leaderboard</span>
