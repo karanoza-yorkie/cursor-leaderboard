@@ -341,14 +341,24 @@ def download_usage_leaderboard(page, file_path):
     log.info("Leaderboard saved: %s", file_path)
 
 
+# # ✅ NEW: dynamic folder
+def get_week_folder():
+    start, end = get_last_week()
+    return f"{start}_{end}"
+
+
 def run_download():
     start, end = get_last_week()
 
     start_label = start.strftime("%d%b")
     end_label   = end.strftime("%d%b")
 
-    usage_file       = RAW_DIR / f"team_usage_{start_label}_{end_label}.csv"
-    leaderboard_file = RAW_DIR / f"leaderboard_{start_label}_{end_label}.csv"
+    #     week_folder = get_week_folder()
+    RAW_DIR = Path(f"data/raw/{week_folder}")
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+    usage_file       = RAW_DIR / "usage.csv"
+    leaderboard_file = RAW_DIR / "leaderboard.csv"
 
     log.info("Date range : %s → %s", start, end)
     log.info("team_usage → %s", usage_file)
