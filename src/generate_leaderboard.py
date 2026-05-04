@@ -237,6 +237,8 @@ def build_html(rows):
     width: 40px;
     height: 40px;
     object-fit: contain;
+    transform: scale(0.5);
+    transform-origin: center;
     }}
 
   .slide {{
