@@ -43,6 +43,8 @@ def fetch_photo_url(email):
 
     url = f"https://api.hub.york.ie/api/external/interview/get-profile-pic/{email}"
 
+    print("API KEY:", API_KEY)
+
     headers = {
         "x-api-key": API_KEY,
         "Authorization": f"Bearer {API_KEY}",
