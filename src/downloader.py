@@ -278,8 +278,8 @@ def set_date_range(page, start, end):
     # 🔥 CLICK TWICE (fix pre-selected range issue)
     start_btn.click()
     page.wait_for_timeout(200)
-    start_btn.click()
-    page.wait_for_timeout(500)
+    # start_btn.click()
+    # page.wait_for_timeout(500)
 
     # -------------------------
     # HANDLE CROSS-MONTH
