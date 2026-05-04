@@ -233,6 +233,12 @@ def build_html(rows):
     position: relative;
   }}
 
+  .brand-logo {{
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    }}
+
   .slide {{
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
