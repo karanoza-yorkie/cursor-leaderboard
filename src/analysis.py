@@ -157,6 +157,10 @@ def run_analysis():
         0.5 * final_df["quality_norm"]
     ).round(3)
 
+    final_df["usage_score"] = (final_df["usage_score"] * 100).round(2)
+    final_df["quality_norm"] = (final_df["quality_norm"] * 100).round(2)
+    final_df["final_score"] = (final_df["final_score"] * 100).round(2)
+
     MIN_AI_LINES = final_df["Total_AI_Lines"].quantile(0.50)   # dynamic
     MIN_COST = 10
     MIN_PROMPTS = 20
