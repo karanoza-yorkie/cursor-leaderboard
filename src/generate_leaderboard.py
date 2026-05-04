@@ -4,6 +4,8 @@ import os
 import base64
 from datetime import datetime, timedelta
 from pathlib import Path
+import requests
+from urllib.parse import quote
 
 # ── SAME helper (consistent across all files) ────────────────────────────────
 def get_last_week():
