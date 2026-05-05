@@ -130,7 +130,7 @@ def build_card(row):
     <div class="card-header">
       <div class="brand">
     <img src="York-logo-.png" class="brand-logo" />
-    <span class="brand-name">AI Leverage</span>
+    <span class="brand-name">Cursor Usage</span>
     </div>
       <div class="badge-weekly">
         <span>Weekly</span>
