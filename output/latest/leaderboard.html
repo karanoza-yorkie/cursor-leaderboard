@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>AI Leverage – Weekly Leaderboard</title>
+<!-- Auto-refresh every 300 seconds to pick up CSV changes -->
+<meta http-equiv="refresh" content="300"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green:    #22c55e;
+    --green-lt: #dcfce7;
+    --dark:     #0f2318;
+    --text:     #1a1a1a;
+    --muted:    #555;
+    --bg:       #f0f7f2;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--dark);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    overflow: hidden;
+  }
+
+  /* ── Slideshow ── */
+  .slideshow {
+    width: 100vw; height: 100vh;
+    position: relative;
+  }
+
+  .brand-logo {
+    width: 10px;
+    height: 10px;
+    object-fit: contain;
+    }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0;
+    transform: scale(0.97) translateY(12px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1; transform: scale(1) translateY(0);
+    pointer-events: all;
+  }
+  .slide.exit {
+    opacity: 0; transform: scale(1.03) translateY(-12px);
+  }
+
+  /* ── Card ── */
+  .card {
+    background: white;
+    border-radius: 24px;
+    width: min(920px, 95vw);
+    padding: 36px 40px 28px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 5px;
+    background: linear-gradient(90deg, var(--green), #4ade80, var(--green));
+  }
+
+  /* ── Header ── */
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem; color: var(--text); letter-spacing: 1px;
+  }
+  .badge-weekly {
+    background: var(--dark);
+    color: white; border-radius: 10px;
+    padding: 8px 18px; text-align: center;
+    font-weight: 700; font-size: .85rem; line-height: 1.3;
+    transform: rotate(-2deg);
+  }
+  .badge-bold { display: block; font-size: 1.1rem; font-style: italic; }
+
+  /* ── Person section ── */
+  .person-section {
+    display: flex; align-items: center; gap: 0;
+    margin-bottom: 32px;
+  }
+  .rank-circle {
+    position: relative; flex-shrink: 0;
+    width: 200px; height: 160px;
+  }
+  .rank-num {
+    position: absolute; top: 0; left: 16px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 4.5rem; color: var(--rank-color, var(--green));
+    line-height: 1;
+  }
+  .rank-num sup { font-size: 1.8rem; vertical-align: super; }
+  .avatar-ring {
+    position: absolute; bottom: 0; left: 30px;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    border: 5px solid var(--green);
+    overflow: hidden;
+    background: var(--green-lt);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .avatar-img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar-placeholder {
+    font-size: 3.5rem; font-weight: 800; color: var(--green);
+  }
+
+  .name-block {
+    background: #f0faf4;
+    border-radius: 14px;
+    padding: 20px 28px;
+    flex: 1;
+  }
+  .person-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem; letter-spacing: 1px; color: var(--text);
+    line-height: 1;
+  }
+  .person-title {
+    font-weight: 700; font-size: 1.05rem; color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* ── Stats ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 12px auto 1fr;
+    align-items: start; gap: 0 20px;
+    margin-bottom: 14px;
+  }
+  .stat-side-label {
+    font-size: .78rem; color: var(--muted); line-height: 1.5;
+  }
+  .stat-side-label.right { text-align: right; }
+  .stat-col { text-align: center; }
+  .stat-col-header {
+    font-weight: 800; font-size: .85rem; color: var(--green);
+    letter-spacing: 1px; margin-bottom: 10px;
+  }
+  .stat-item { font-size: .95rem; color: var(--text); margin-bottom: 6px; }
+  .stat-item strong { font-weight: 800; }
+  .stat-divider {
+    width: 2px; background: repeating-linear-gradient(
+      to bottom, var(--green) 0 6px, transparent 6px 12px
+    );
+    align-self: stretch; min-height: 60px;
+  }
+
+  .active-days {
+    text-align: center; font-size: .95rem;
+    color: var(--muted); margin-bottom: 16px;
+  }
+  .active-days strong { color: var(--text); font-weight: 800; }
+
+  /* ── Final score bar ── */
+  .final-score-bar {
+    background: #d1fae5;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+    font-size: 1.4rem; font-weight: 700; color: var(--green);
+    margin-bottom: 10px;
+  }
+  .final-score-bar strong { font-size: 1.6rem; }
+  .final-note {
+    text-align: center; font-size: .78rem; color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  /* ── Dots ── */
+  .dots-row {
+    display: flex; justify-content: center; gap: 8px; margin-top: 4px;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #d1d5db; transition: background .3s, transform .3s;
+    cursor: pointer;
+  }
+  .dot.active { background: var(--green); transform: scale(1.3); }
+
+  /* ── Generated timestamp ── */
+  .timestamp {
+    position: fixed; bottom: 14px; right: 20px;
+    font-size: .72rem; color: rgba(255,255,255,.35);
+    font-family: monospace;
+  }
+
+  /* ── Progress bar ── */
+  .progress-bar {
+    position: fixed; bottom: 0; left: 0;
+    height: 3px; background: var(--green);
+    width: 0%; transition: width linear;
+    z-index: 99;
+  }
+</style>
+</head>
+<body>
+
+<div class="slideshow" id="slideshow">
+  
+<div class="slide" data-rank="1">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#22c55e">
+        <span class="rank-num">1<sup>st</sup></span>
+        <div class="avatar-ring" style="border-color:#22c55e">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/sujan%40york.ie/profilepics/Sujan%20Patel.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T094955Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=96124a9d8c38efdc2b60bdef547b5832b9cd3cc6fbbdebe243e855261c36ae95&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="SUJAN PATEL" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">SUJAN PATEL</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>11,246</strong></div>
+        <div class="stat-item">Usage score: <strong>54.7</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>31.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>62.5</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>2</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>58.60</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="2">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#94a3b8">
+        <span class="rank-num">2<sup>nd</sup></span>
+        <div class="avatar-ring" style="border-color:#94a3b8">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/hareshb%40york.ie/profilepics/Haresh%20Bhaliya.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T094956Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=9e1dd44eac44bb41c0baa2a0b92b06ecb59b966aec19cd4ff51c1a116492b09f&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="HARESH BHALIYA" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">HARESH BHALIYA</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>5,870</strong></div>
+        <div class="stat-item">Usage score: <strong>35.0</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>24.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>65.8</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>50.40</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="3">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#cd7f32">
+        <span class="rank-num">3<sup>rd</sup></span>
+        <div class="avatar-ring" style="border-color:#cd7f32">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/shoab%40york.ie/profilepics/Shoab%20Khan.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T094957Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=26cab92513fdc41769ed548d29c2d3fb4e10302c60a888100845a26f4498bb3b&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="SHOAB KHAN" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">SHOAB KHAN</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>6,492</strong></div>
+        <div class="stat-item">Usage score: <strong>41.2</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>74.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>59.5</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>50.30</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="4">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">4<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/dharmik%40york.ie/profilepics/Dharmik%20Shah.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T094958Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=50fdf154d083634343301aa0bd9d869b8371808592b11dd7f2d1506414f10faf&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="DHARMIK SHAH" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">DHARMIK SHAH</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>6,152</strong></div>
+        <div class="stat-item">Usage score: <strong>35.8</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>71.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>63.7</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>49.80</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="5">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">5<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/vraj.g%40york.ie/profile_photo_1766572631441_Vraj_Gangani_png_1766572631441.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T094959Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=325c74477426cac7492be3382097886e560553b64568a24854d80d9712a58741&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="VRAJ GANGANI" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">VRAJ GANGANI</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>9,134</strong></div>
+        <div class="stat-item">Usage score: <strong>48.4</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>226.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>50.3</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>49.40</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="6">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">6<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/harsh.s%40york.ie/profile_photo_1767086496894_Harsh_shukla_png_1767086496894.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T095000Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=a118f38dfc1f0c2f1ca61f3d6a031c5d6528871d0e03663c03f9a3dfabb7221c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="HARSH SHUKLA" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">HARSH SHUKLA</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>3,517</strong></div>
+        <div class="stat-item">Usage score: <strong>36.6</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>87.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>61.8</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>4</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>49.20</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="7">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">7<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/rutvi.j%40york.ie/profile_photo_1739450545071_Rutvi_Pandya_png_1739450545071.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T095001Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=16f9ead4564e4fb50e5009c9566a2bfa2561369a82fa4126bba7200f31b116bc&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="RUTVI PANDYA" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">RUTVI PANDYA</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>8,112</strong></div>
+        <div class="stat-item">Usage score: <strong>44.2</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>80.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>51.4</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>47.80</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="8">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">8<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/parth.t%40york.ie/profile_photo_1737959666758_Parth_Thakkar_png_1737959666758.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T095002Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=2d8d0804c743ec6be0d548451a82fe39d92f1d8204d67ca5943b1fa088703ada&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="PARTH THAKKAR" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">PARTH THAKKAR</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>2,931</strong></div>
+        <div class="stat-item">Usage score: <strong>36.4</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>77.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>57.8</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>4</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>47.10</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="9">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">9<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/akshat%40york.ie/profilepics/Akshat%20Parekh.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T095003Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=7977229de838af5051c23f12124d67c90044b3ee985f17f0de2d97a56f59095d&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="AKSHAT PAREKH" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">AKSHAT PAREKH</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>3,262</strong></div>
+        <div class="stat-item">Usage score: <strong>36.2</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>78.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>56.9</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>46.50</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+
+<div class="slide" data-rank="10">
+  <div class="card">
+
+    <!-- Header bar -->
+    <div class="card-header">
+      <div class="brand">
+    <img src="York-logo-.png" class="brand-logo" />
+    <span class="brand-name">Cursor Usage</span>
+    </div>
+      <div class="badge-weekly">
+        <span>Weekly</span>
+        <span class="badge-bold">Leaderboard</span>
+      </div>
+    </div>
+
+    <!-- Person section -->
+    <div class="person-section">
+      <div class="rank-circle" style="--rank-color:#64748b">
+        <span class="rank-num">10<sup>th</sup></span>
+        <div class="avatar-ring" style="border-color:#64748b">
+          <img src="https://hub-backend-prod-documents.s3.ap-south-1.amazonaws.com/documents/hemang%40york.ie/profilepics/Hemang%20Chothani.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAU3N7V7M5RRUUCJ3C%2F20260507%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260507T095004Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEOb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCmFwLXNvdXRoLTEiRzBFAiAurFn2SniwnnugoYHw8YbJKbUZHiuJdULt5VfhdMEdkAIhAJcYVv9jDXWOMR0GROotjJLX2iomK3zKpSnXTPSe2BMYKpkECK%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQABoMMzMzNzk4ODMyOTU1Igzft9z2g4EwG9WYp8gq7QOWudPYw1Tb33qab0bnRA%2FHpQRkAyt9%2FdhYb4cr96w9pyehgMsDUvM8jnxL1ti65NmwdDuUAFFAQGiSuTX6inz4Wn8iNTLkuC2KiB22af1GYi7uJ6NEwCdlFvVNFRD5gFPaP%2BZeKHiacHcI4V0UvO%2B6P74Iu4lWN48C1u67lxQmnn%2FqCHEgIQJnbgBhK9ZWqMMyrtltR7BuX1vnbR%2BCtn%2FzDyuqHjlQ8N2Ccw9EABPzlipPhu8vb20Jqg%2BF4V5C%2F4Dsr18wy4Ab5dL2aM58pW5u1MapLWdWXT5zUt6wib3bY3%2Faj6wCJ6Se1kR1%2F1B8tu0b6h3EvkNEwUbyS75ea5tSzV67Tmyh3pLnOFuAC%2BcL0I2zRlZdfdIDIk%2B6R880rTSQsaLhf45OBPBUUfmixJ1p10Zy48XSOmMwbYqe8bmrKHGy7SDWB3E9iMIitvkVnyOFSast8iiHWcH4I19AXS0V6djhrUupOwWpzWdgqBjqkZLskPKnqkWxAyuHTdxyhRY3%2BBqwwewACyI44cvpXssNiEd5pfSRS8wSudXO768ofdhMhXvHZQkgJ87mx%2FiCBhlmgr3ncEwd1zME3xKLilGRgJgXItWMdqSMVsXbCIDa4dp8WoUPFnhAJAZJ4M6Idm2cKEJw5dS95Un%2BbqmgMNLb8M8GOqYBc%2F8c9nfYTBT1eSwNaQv2axaYbq3HntqN%2F08PU0YarCvz8gR%2F5EIBJZu9h0dz%2FIdqsx8euvoPm2N%2BsbgVyxLbnUMj6XAWzM86sJ5J3hWy%2FsGBWRtZSp4rrL85oy6kmkOrUQnXEULOGA%2BTeokrLgVsCbn9Fb62gmHMKps4uyp5cP30eMmM50Y2w17Q4k0%2BiUd3HClTYtdjHTyh3W28qeyofwdxMnQQIA%3D%3D&X-Amz-Signature=639286d5f450cb6d157eeb2295203e1c98238d74d1d96d7c4ad02b257a2c11f7&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject" alt="HEMANG CHOTHANI" class="avatar-img" />
+        </div>
+      </div>
+      <div class="name-block">
+        <h1 class="person-name">HEMANG CHOTHANI</h1>
+        <p class="person-title"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-side-label">
+        <strong>Usage Score:</strong> Calculated based on consistency of usage and total AI-generated output.
+      </div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">USAGE</div>
+        <div class="stat-item">Total AI Lines: <strong>3,679</strong></div>
+        <div class="stat-item">Usage score: <strong>33.5</strong></div>
+      </div>
+
+      <div class="stat-divider"></div>
+
+      <div class="stat-col">
+        <div class="stat-col-header">QUALITY</div>
+        <div class="stat-item">Total Prompts: <strong>112.0</strong></div>
+        <div class="stat-item">Quality Score: <strong>56.5</strong></div>
+      </div>
+
+      <div class="stat-side-label right">
+        <strong>Quality Score:</strong> Calculated based on overall prompt effectiveness across usage.
+      </div>
+    </div>
+
+    <div class="active-days">Active Days: <strong>5</strong></div>
+
+    <div class="final-score-bar">
+      Final score: <strong>45.00</strong>
+    </div>
+
+    <p class="final-note">Final Score: Combined score based on equal weightage of Usage and Quality.</p>
+
+    <!-- Slide indicator dots (filled by JS) -->
+    <div class="dots-row" id="dots"></div>
+  </div>
+</div>
+
+</div>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="timestamp">Generated: 2026-05-07 09:50 · Auto-refreshes every 5 min</div>
+
+<script>
+(function() {
+  const DURATION = 6000;
+  const slides   = Array.from(document.querySelectorAll('.slide'));
+  const total    = slides.length;
+  let current    = 0;
+  let timer      = null;
+  let progTimer  = null;
+
+  // Build dots inside every card
+  slides.forEach((slide, idx) => {
+    const dotsEl = slide.querySelector('#dots');
+    if (!dotsEl) return;
+    dotsEl.id = ''; // remove duplicate id
+    slides.forEach((_, di) => {
+      const d = document.createElement('span');
+      d.className = 'dot' + (di === idx ? ' active' : '');
+      d.addEventListener('click', () => goTo(di));
+      dotsEl.appendChild(d);
+    });
+  });
+
+  function updateDots(idx) {
+    slides.forEach(slide => {
+      const dots = slide.querySelectorAll('.dot');
+      dots.forEach((d, di) => d.classList.toggle('active', di === idx));
+    });
+  }
+
+  function goTo(idx) {
+    slides[current].classList.remove('active');
+    slides[current].classList.add('exit');
+    setTimeout(() => slides[current].classList.remove('exit'), 700);
+    current = (idx + total) % total;
+    slides[current].classList.add('active');
+    updateDots(current);
+    startProgress();
+  }
+
+  function next() { goTo(current + 1); }
+
+  function startProgress() {
+    const bar = document.getElementById('progressBar');
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    clearTimeout(progTimer);
+    clearTimeout(timer);
+    // Small delay to allow reflow
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      bar.style.transition = `width ${DURATION}ms linear`;
+      bar.style.width = '100%';
+    }));
+    timer = setTimeout(next, DURATION);
+  }
+
+  // Keyboard nav
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') next();
+    if (e.key === 'ArrowLeft') goTo(current - 1);
+  });
+
+  // Start
+  slides[0].classList.add('active');
+  updateDots(0);
+  startProgress();
+})();
+</script>
+</body>
+</html>
