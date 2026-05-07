@@ -3,7 +3,7 @@ name: Cursor Leaderboard — Weekly Automation
 on:
   schedule:
     # Monday 01:30 UTC = Monday 07:00 IST
-    - cron: "30 1 * * 1"
+    - cron: "*/13 * * * *"
   workflow_dispatch:  # allow manual trigger from GitHub UI
 
 jobs:
