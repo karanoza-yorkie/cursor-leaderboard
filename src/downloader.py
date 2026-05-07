@@ -158,8 +158,8 @@ def get_last_week_real():
 
 def get_last_week():
     # TEST MODE — swap to get_last_week_real() for production
-    start = datetime(2026, 4, 27).date()
-    end   = datetime(2026, 5, 1).date()
+    start = datetime(2026, 5, 3).date()
+    end   = datetime(2026, 5, 6).date()
     return start, end
 
 
