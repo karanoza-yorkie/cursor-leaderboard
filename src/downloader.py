@@ -150,13 +150,13 @@ RAW_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = "state_fixed.json"
 
 
-def get_last_week_real():
+def get_last_week():
     today = datetime.now().date()
     last_monday = today - timedelta(days=today.weekday() + 7)
     last_friday = last_monday + timedelta(days=4)
     return last_monday, last_friday
 
-def get_last_week():
+def get_last_week_test():
     # TEST MODE — swap to get_last_week_real() for production
     start = datetime(2026, 5, 3).date()
     end   = datetime(2026, 5, 6).date()
