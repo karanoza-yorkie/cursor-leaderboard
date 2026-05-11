@@ -1,4 +1,4 @@
-name: Cursor Weekly Pipeline
+name: Cursor Weekly Pipeline Automated
 
 env:
   HUB_API_KEY: ${{ secrets.HUB_API_KEY }}
