@@ -1,4 +1,5 @@
 state.json
 state_fixed.json
 venv/
+.venv/
 __pycache__/

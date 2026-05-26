@@ -1,0 +1,17 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+
+# Real face recognition. dlib is pulled in transitively by face_recognition
+# and compiles from source on first install; you need CMake on the host
+# (`brew install cmake` on macOS; `apt install cmake build-essential` on
+# Linux). Python 3.11 is the most reliable Python for dlib wheels.
+face_recognition==1.3.0
+numpy>=1.24,<3
+Pillow>=10.0,<12
+
+# `face_recognition_models` (a transitive dep) still uses
+# `pkg_resources` (from setuptools). pkg_resources was removed from
+# Python's bootstrap in 3.12+ AND from setuptools itself in v81. Pin
+# to a range that still ships pkg_resources so the import works.
+setuptools>=68,<81

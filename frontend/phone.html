@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f2318" />
+<title>Cursor Leaderboard – Camera</title>
+<style>
+  /*
+   * Phone capture page.
+   *
+   * Camera auto-starts on load (no buttons per spec). A hidden <canvas>
+   * grabs JPEG frames from the live <video>; frames are POSTed to
+   * /detect on the same origin (the FastAPI backend also serves this
+   * page, so window.location.origin = backend URL).
+   *
+   * Cross-browser camera handling is isolated in the `Camera` IIFE at
+   * the bottom of this file. See Camera.diagnose() for the failure
+   * classification (INSECURE_CONTEXT / IN_APP_BROWSER / NO_API /
+   * PERMISSION / NO_CAMERA / CAMERA_BUSY / OVERCONSTRAINED / UNKNOWN /
+   * NEEDS_GESTURE).
+   */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #0f2318;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+
+  #video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    background: #000;
+    /* Front-facing default → mirror for natural feel. If we fall back
+       to the rear camera, the `no-mirror` class flips this off. The
+       JPEG sent to the backend is never mirrored (canvas reads raw). */
+    transform: scaleX(-1);
+  }
+  #video.no-mirror { transform: none; }
+
+  #canvas { display: none; }
+
+  .top-bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 16px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0));
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    background: rgba(0,0,0,0.55);
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  .status .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #94a3b8;
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+  .status.is-idle    .dot { background: #94a3b8; }
+  .status.is-sending .dot { background: #f59e0b; transform: scale(1.2); }
+  .status.is-hit     .dot { background: #22c55e; transform: scale(1.2); }
+  .status.is-cool    .dot { background: #38bdf8; }
+  .status.is-err     .dot { background: #ef4444; }
+
+  .bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 16px 18px calc(20px + env(safe-area-inset-bottom));
+    text-align: center;
+    background: linear-gradient(0deg, rgba(0,0,0,0.55), rgba(0,0,0,0));
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .detected {
+    display: inline-block;
+    padding: 10px 18px;
+    background: rgba(34,197,94,0.18);
+    border: 1px solid rgba(34,197,94,0.6);
+    border-radius: 14px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #d1fae5;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .detected.is-visible { opacity: 1; transform: translateY(0); }
+
+  /* ── Sticky error panel (one per failure code) ── */
+  #error {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+    background: rgba(0,0,0,0.85);
+    z-index: 3;
+  }
+  #error.is-visible { display: flex; }
+  #error .panel {
+    max-width: 380px;
+    background: #1a2e22;
+    border: 1px solid #22c55e;
+    border-radius: 16px;
+    padding: 22px 22px 20px;
+    text-align: center;
+  }
+  #error .panel h1 {
+    font-size: 1.05rem; font-weight: 800; margin-bottom: 10px;
+    color: #d1fae5;
+  }
+  #error .panel p {
+    font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;
+  }
+  #error .panel p + p { margin-top: 8px; }
+  #error .panel code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem; color: #fde68a;
+    background: rgba(0,0,0,0.35);
+    padding: 1px 6px; border-radius: 4px;
+  }
+
+  /* ── Tap-to-start overlay (iOS autoplay rejection fallback) ── */
+  #tap-to-start {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 4;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  #tap-to-start.is-visible { display: flex; }
+  .tts-inner {
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+    padding: 24px 36px;
+    border-radius: 18px;
+    background: rgba(15,35,24,0.85);
+    border: 1px solid rgba(34,197,94,0.6);
+  }
+  .tts-pulse {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 0 rgba(34,197,94,0.5);
+    animation: tts-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes tts-pulse {
+    0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(34,197,94,0.5); }
+    50%      { transform: scale(1.15); box-shadow: 0 0 0 18px rgba(34,197,94,0); }
+  }
+  .tts-label {
+    font-size: 1rem; font-weight: 700; color: #d1fae5; letter-spacing: 0.3px;
+  }
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline muted webkit-playsinline></video>
+<canvas id="canvas"></canvas>
+
+<div class="top-bar">
+  <span class="title">Cursor Camera</span>
+  <span id="status" class="status is-idle">
+    <span class="dot"></span>
+    <span id="status-label">Starting…</span>
+  </span>
+</div>
+
+<div class="bottom-bar">
+  <span id="detected" class="detected">—</span>
+</div>
+
+<div id="error" role="alert" aria-live="polite">
+  <div class="panel">
+    <h1 id="error-title">Camera unavailable</h1>
+    <p id="error-body">Initializing…</p>
+  </div>
+</div>
+
+<div id="tap-to-start" role="button" tabindex="0" aria-label="Tap to start camera">
+  <div class="tts-inner">
+    <div class="tts-pulse"></div>
+    <span class="tts-label">Tap to start camera</span>
+  </div>
+</div>
+
+<script>
+/* ====================================================================
+ * Camera module
+ * --------------------------------------------------------------------
+ * Cross-browser camera initialization. Isolated from the page so it
+ * can be swapped (native WebView wrapper, telemetry, mocks) without
+ * touching the rest of phone.html.
+ *
+ * Public API:
+ *   Camera.Codes                - string enum of failure codes
+ *   Camera.messageFor(code)     - { title, body } (body is HTML)
+ *   Camera.init(videoEl)        - async; returns one of:
+ *     { ok: true,  stream, facingMode }
+ *     { ok: false, code, error?, stream? } // stream present iff NEEDS_GESTURE
+ *   Camera.stop(stream)         - releases all tracks
+ *   Camera.tryPlay(videoEl)     - re-attempts video.play() (used after gesture)
+ * ==================================================================== */
+var Camera = (function () {
+  "use strict";
+
+  var Codes = {
+    INSECURE_CONTEXT: "INSECURE_CONTEXT",
+    IN_APP_BROWSER:   "IN_APP_BROWSER",
+    NO_API:           "NO_API",
+    PERMISSION:       "PERMISSION",
+    NO_CAMERA:        "NO_CAMERA",
+    CAMERA_BUSY:      "CAMERA_BUSY",
+    OVERCONSTRAINED:  "OVERCONSTRAINED",
+    NEEDS_GESTURE:    "NEEDS_GESTURE",
+    UNKNOWN:          "UNKNOWN"
+  };
+
+  /* Per-code user-facing copy. `body` may contain a small amount of
+     trusted HTML for code snippets; never interpolate user data. */
+  var Messages = {
+    INSECURE_CONTEXT: {
+      title: "HTTPS required",
+      body:
+        "The browser blocks the camera on plain <code>http://</code> from a LAN " +
+        "address. Open this page over <code>https://</code> or via " +
+        "<code>http://localhost</code>." +
+        "<br><br>Quick fix on the host machine:" +
+        "<br><code>cloudflared tunnel --url http://localhost:8000</code>" +
+        "<br>then open the printed HTTPS URL on this phone."
+    },
+    IN_APP_BROWSER: {
+      title: "Open in your browser",
+      body:
+        "In-app browsers (Instagram, Facebook, LinkedIn, WeChat, TikTok, …) " +
+        "cannot access the camera. Tap the menu (•••) and choose " +
+        "<strong>Open in Safari</strong> (iOS) or <strong>Open in Chrome</strong> (Android)."
+    },
+    NO_API: {
+      title: "Browser unsupported",
+      body:
+        "Camera access isn't available in this browser. Use a recent version of " +
+        "Safari (iOS), Chrome, Edge, Samsung Internet, or Firefox."
+    },
+    PERMISSION: {
+      title: "Camera permission denied",
+      body:
+        "Allow camera access for this site, then reload this page." +
+        "<br><br><strong>iOS Safari:</strong> Settings → Safari → Camera → Allow." +
+        "<br><strong>Android Chrome:</strong> tap the lock icon → Permissions → Camera → Allow."
+    },
+    NO_CAMERA: {
+      title: "No camera found",
+      body: "This device does not appear to have a usable camera."
+    },
+    CAMERA_BUSY: {
+      title: "Camera in use",
+      body:
+        "Another app is using the camera. Close it (e.g. FaceTime, WhatsApp, " +
+        "the system Camera app) and reload this page."
+    },
+    OVERCONSTRAINED: {
+      title: "Camera incompatible",
+      body:
+        "No camera on this device matched the requested settings, even after " +
+        "fallbacks. Try a different browser or device."
+    },
+    NEEDS_GESTURE: {
+      title: "Tap to start camera",
+      body: "Your browser requires a tap to start the camera."
+    },
+    UNKNOWN: {
+      title: "Camera error",
+      body: "Could not start the camera. Try reloading this page."
+    }
+  };
+
+  /* In-app browser detection: list mirrors the set most likely to ship
+     restricted WebViews. False positives are acceptable because the
+     fix ("open in your browser") works universally. */
+  var IN_APP_UA = /\b(FBAN|FBAV|FB_IAB|FBIOS|Instagram|Line\/|MicroMessenger|LinkedInApp|Snapchat|Snapchat\/|TikTok|musical_ly|WeiboApp|KAKAOTALK|NAVER|Pinterest)\b/i;
+
+  function isInAppBrowser() {
+    return IN_APP_UA.test(navigator.userAgent || "");
+  }
+
+  function isLocalHost() {
+    var h = window.location.hostname;
+    return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "0.0.0.0";
+  }
+
+  /* Best-effort legacy shim. Only installed when no modern API is
+     present AND a legacy variant exists. Never overrides a real
+     implementation. */
+  function installLegacyShim() {
+    if (typeof navigator === "undefined") return false;
+
+    var legacy = navigator.getUserMedia ||
+                 navigator.webkitGetUserMedia ||
+                 navigator.mozGetUserMedia ||
+                 navigator.msGetUserMedia;
+    if (!legacy) return false;
+
+    if (!navigator.mediaDevices) {
+      try { navigator.mediaDevices = {}; }
+      catch (_) { /* read-only on some ancient WebViews */ return false; }
+    }
+    if (!navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia = function (constraints) {
+        return new Promise(function (resolve, reject) {
+          try { legacy.call(navigator, constraints, resolve, reject); }
+          catch (err) { reject(err); }
+        });
+      };
+    }
+    return true;
+  }
+
+  /* Decides whether we can attempt getUserMedia at all, and if not,
+     why. Returns { code: "OK" } on the happy path. */
+  function diagnose() {
+    if (window.isSecureContext === false && !isLocalHost()) {
+      return { code: Codes.INSECURE_CONTEXT };
+    }
+    if (isInAppBrowser()) {
+      return { code: Codes.IN_APP_BROWSER };
+    }
+
+    var hasModern = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    if (!hasModern) installLegacyShim();
+    hasModern = !!(navigator.mediaDevices &&
+                   typeof navigator.mediaDevices.getUserMedia === "function");
+
+    if (!hasModern) return { code: Codes.NO_API };
+    return { code: "OK" };
+  }
+
+  function mapStreamError(err) {
+    var name = (err && err.name) || "";
+    switch (name) {
+      case "NotAllowedError":
+      case "SecurityError":
+        return Codes.PERMISSION;
+      case "NotFoundError":
+        return Codes.NO_CAMERA;
+      case "NotReadableError":
+      case "TrackStartError":
+        return Codes.CAMERA_BUSY;
+      case "OverconstrainedError":
+      case "ConstraintNotSatisfiedError":
+        return Codes.OVERCONSTRAINED;
+      default:
+        return Codes.UNKNOWN;
+    }
+  }
+
+  /* Constraint fallback ladder. Stops at the first success. Only
+     OverconstrainedError continues down the ladder; other errors
+     (permission, no camera, …) abort immediately. */
+  var CONSTRAINT_LADDER = [
+    { video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: { ideal: "environment" } }, audio: false },
+    { video: true, audio: false }
+  ];
+
+  async function tryGetStream() {
+    var lastErr = null;
+    for (var i = 0; i < CONSTRAINT_LADDER.length; i++) {
+      try {
+        var stream = await navigator.mediaDevices.getUserMedia(CONSTRAINT_LADDER[i]);
+        return { stream: stream };
+      } catch (err) {
+        lastErr = err;
+        var name = err && err.name;
+        if (name !== "OverconstrainedError" && name !== "ConstraintNotSatisfiedError") {
+          break;
+        }
+      }
+    }
+    return { error: lastErr };
+  }
+
+  function inferFacingMode(stream) {
+    try {
+      var track = stream.getVideoTracks()[0];
+      if (track && typeof track.getSettings === "function") {
+        var s = track.getSettings();
+        if (s && s.facingMode) return s.facingMode;
+      }
+    } catch (_) { /* ignore */ }
+    return "user";
+  }
+
+  async function tryPlay(videoEl) {
+    try {
+      await videoEl.play();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err };
+    }
+  }
+
+  async function init(videoEl) {
+    var diag = diagnose();
+    if (diag.code !== "OK") {
+      return { ok: false, code: diag.code };
+    }
+
+    var got = await tryGetStream();
+    if (got.error) {
+      return { ok: false, code: mapStreamError(got.error), error: got.error };
+    }
+
+    videoEl.srcObject = got.stream;
+
+    var played = await tryPlay(videoEl);
+    if (!played.ok) {
+      /* Stream is alive; the browser just refused to autoplay it.
+         Hand the stream back so the caller can re-try play() from
+         inside a real user-gesture handler. */
+      return {
+        ok: false,
+        code: Codes.NEEDS_GESTURE,
+        error: played.error,
+        stream: got.stream,
+        facingMode: inferFacingMode(got.stream)
+      };
+    }
+
+    return { ok: true, stream: got.stream, facingMode: inferFacingMode(got.stream) };
+  }
+
+  function stop(stream) {
+    if (!stream) return;
+    try {
+      stream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
+    } catch (_) { /* ignore */ }
+  }
+
+  function messageFor(code) {
+    return Messages[code] || Messages.UNKNOWN;
+  }
+
+  return {
+    Codes: Codes,
+    messageFor: messageFor,
+    init: init,
+    tryPlay: tryPlay,
+    stop: stop
+  };
+})();
+
+
+/* ====================================================================
+ * Page controller
+ * ==================================================================== */
+(function () {
+  "use strict";
+
+  /* ── Config ──────────────────────────────────────────────────────── */
+  var DETECT_URL  = window.location.origin + "/detect";
+  var CAPTURE_MS  = 1500;
+  var JPEG_QUALITY = 0.7;
+  var MAX_EDGE_PX = 640;
+
+  /* ── DOM ─────────────────────────────────────────────────────────── */
+  var videoEl       = document.getElementById("video");
+  var canvasEl      = document.getElementById("canvas");
+  var statusEl      = document.getElementById("status");
+  var statusLabel   = document.getElementById("status-label");
+  var detectedEl    = document.getElementById("detected");
+  var errorEl       = document.getElementById("error");
+  var errorTitleEl  = document.getElementById("error-title");
+  var errorBodyEl   = document.getElementById("error-body");
+  var tapEl         = document.getElementById("tap-to-start");
+
+  /* ── State ───────────────────────────────────────────────────────── */
+  var inFlight = false;
+  var lastSendAt = 0;
+  var detectedHideTimer = null;
+  var captureTimer = null;
+
+  /* ── UI helpers ──────────────────────────────────────────────────── */
+  function setStatus(kind, text) {
+    statusEl.className = "status is-" + kind;
+    statusLabel.textContent = text;
+  }
+
+  function showDetected(person) {
+    detectedEl.textContent = "Detected: " + person.name;
+    detectedEl.classList.add("is-visible");
+    clearTimeout(detectedHideTimer);
+    detectedHideTimer = setTimeout(function () {
+      detectedEl.classList.remove("is-visible");
+    }, 4000);
+  }
+
+  function renderError(code) {
+    var msg = Camera.messageFor(code);
+    errorTitleEl.textContent = msg.title;
+    /* Body contains a small amount of trusted HTML (e.g. <code> tags).
+       Never include user data here. */
+    errorBodyEl.innerHTML = msg.body;
+    errorEl.classList.add("is-visible");
+    setStatus("err", shortStatusFor(code));
+    stopCaptureLoop();
+  }
+
+  function shortStatusFor(code) {
+    switch (code) {
+      case Camera.Codes.INSECURE_CONTEXT: return "HTTPS required";
+      case Camera.Codes.IN_APP_BROWSER:   return "Open in browser";
+      case Camera.Codes.NO_API:           return "Unsupported";
+      case Camera.Codes.PERMISSION:       return "Permission denied";
+      case Camera.Codes.NO_CAMERA:        return "No camera";
+      case Camera.Codes.CAMERA_BUSY:      return "Camera busy";
+      case Camera.Codes.OVERCONSTRAINED:  return "Incompatible";
+      default:                            return "Error";
+    }
+  }
+
+  function showTapToStart(onTap) {
+    tapEl.classList.add("is-visible");
+    setStatus("idle", "Tap to start");
+    function handler(ev) {
+      ev.preventDefault();
+      tapEl.removeEventListener("click", handler);
+      tapEl.removeEventListener("touchend", handler);
+      tapEl.classList.remove("is-visible");
+      onTap();
+    }
+    tapEl.addEventListener("click", handler, { once: true });
+    tapEl.addEventListener("touchend", handler, { once: true });
+  }
+
+  /* ── Frame capture ───────────────────────────────────────────────── */
+  function grabFrameBlob() {
+    return new Promise(function (resolve) {
+      var vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+      if (!vw || !vh) { resolve(null); return; }
+
+      var scale = Math.min(1, MAX_EDGE_PX / Math.max(vw, vh));
+      var cw = Math.round(vw * scale);
+      var ch = Math.round(vh * scale);
+
+      canvasEl.width = cw;
+      canvasEl.height = ch;
+      var ctx = canvasEl.getContext("2d");
+      ctx.drawImage(videoEl, 0, 0, cw, ch);
+
+      if (typeof canvasEl.toBlob === "function") {
+        canvasEl.toBlob(function (b) { resolve(b); }, "image/jpeg", JPEG_QUALITY);
+      } else {
+        // Very old WebViews: emulate toBlob via dataURL.
+        try {
+          var dataUrl = canvasEl.toDataURL("image/jpeg", JPEG_QUALITY);
+          var bin = atob(dataUrl.split(",")[1]);
+          var arr = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          resolve(new Blob([arr], { type: "image/jpeg" }));
+        } catch (e) { resolve(null); }
+      }
+    });
+  }
+
+  async function captureAndSend() {
+    if (inFlight) return;
+
+    var now = Date.now();
+    if (now - lastSendAt < CAPTURE_MS - 50) return;
+
+    var blob = await grabFrameBlob();
+    if (!blob) return;
+
+    inFlight = true;
+    lastSendAt = now;
+    setStatus("sending", "Sending…");
+
+    var fd = new FormData();
+    fd.append("image", blob, "frame.jpg");
+
+    try {
+      var resp = await fetch(DETECT_URL, { method: "POST", body: fd });
+
+      if (!resp.ok) {
+        setStatus("err", "HTTP " + resp.status);
+        return;
+      }
+
+      var data = await resp.json();
+      var status = data && data.status;
+      var person = data && data.person;
+
+      if (status === "face_detected" && person && person.id) {
+        showDetected(person);
+        setStatus("hit", "Detected " + person.name);
+      } else if (status === "cooldown") {
+        setStatus("cool", "Cooldown");
+      } else {
+        setStatus("idle", "Watching…");
+      }
+    } catch (err) {
+      setStatus("err", "Network error");
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  function startCaptureLoop() {
+    if (captureTimer) return;
+    setStatus("idle", "Watching…");
+    captureTimer = setInterval(captureAndSend, CAPTURE_MS);
+  }
+
+  function stopCaptureLoop() {
+    if (captureTimer) {
+      clearInterval(captureTimer);
+      captureTimer = null;
+    }
+  }
+
+  /* ── Boot ────────────────────────────────────────────────────────── */
+  function applyFacingMode(facingMode) {
+    if (facingMode === "environment") {
+      videoEl.classList.add("no-mirror");
+    } else {
+      videoEl.classList.remove("no-mirror");
+    }
+  }
+
+  async function startEverything() {
+    setStatus("idle", "Starting camera…");
+
+    var result = await Camera.init(videoEl);
+
+    if (result.ok) {
+      applyFacingMode(result.facingMode);
+      startCaptureLoop();
+      wireVisibilityPause();
+      return;
+    }
+
+    if (result.code === Camera.Codes.NEEDS_GESTURE) {
+      applyFacingMode(result.facingMode);
+      showTapToStart(async function () {
+        var played = await Camera.tryPlay(videoEl);
+        if (!played.ok) {
+          // Second attempt also failed even after a gesture; surface
+          // as a generic error rather than looping forever.
+          Camera.stop(result.stream);
+          renderError(Camera.Codes.UNKNOWN);
+          return;
+        }
+        startCaptureLoop();
+        wireVisibilityPause();
+      });
+      return;
+    }
+
+    renderError(result.code);
+  }
+
+  function wireVisibilityPause() {
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        stopCaptureLoop();
+      } else if (!captureTimer && !errorEl.classList.contains("is-visible")) {
+        startCaptureLoop();
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", startEverything);
+  } else {
+    startEverything();
+  }
+})();
+</script>
+
+</body>
+</html>

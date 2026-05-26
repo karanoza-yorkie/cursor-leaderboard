@@ -207,6 +207,32 @@
     width: 0%; transition: width linear;
     z-index: 99;
   }
+
+  /* ── Live detection overlay (face-recognition WebSocket) ── */
+  .slide.live-detection { z-index: 50; }
+  .slide.live-detection .card { padding: 48px 56px; }
+  .slide.live-detection .live-badge {
+    position: absolute; top: 24px; right: 24px;
+    background: var(--green); color: #fff;
+    border-radius: 999px; padding: 6px 14px;
+    font-weight: 700; font-size: 0.85rem; letter-spacing: 1px;
+  }
+  .slide.live-detection .live-greeting {
+    font-family: 'Bebas Neue', sans-serif; font-size: 3rem;
+    color: var(--text); margin: 32px 0 8px;
+  }
+  .slide.live-detection .live-name {
+    font-family: 'Bebas Neue', sans-serif; font-size: 5.5rem;
+    color: var(--green); margin: 0; line-height: 1;
+  }
+  .slide.live-detection .live-department {
+    font-size: 1.4rem; color: var(--text); opacity: 0.7; margin-top: 18px;
+  }
+  .slide.live-detection .live-progress {
+    position: absolute; bottom: 0; left: 0; height: 4px; width: 0;
+    background: var(--green);
+    transition: width 10s linear;
+  }
 </style>
 </head>
 <body>
@@ -962,6 +988,182 @@
   slides[0].classList.add('active');
   updateDots(0);
   startProgress();
+})();
+</script>
+
+<!--
+  Live face-detection overlay.
+  Self-contained: no shared globals with the slider IIFE above.
+  Paints `.slide.live-detection` (z-index 50) above the rotating leaderboard
+  whenever the backend broadcasts a PERSON_DETECTED WebSocket event.
+-->
+<script>
+(function () {
+  var HOLD_MS = 10000;
+  var EXIT_MS = 700;
+  var QUEUE_CAP = 10;
+  var RECONNECT_INITIAL_MS = 1000;
+  var RECONNECT_MAX_MS = 30000;
+
+  function resolveWsUrl() {
+    try {
+      var q = new URLSearchParams(window.location.search).get('ws');
+      if (q) return q;
+    } catch (_) { /* URLSearchParams missing on ancient TVs; fall through */ }
+    if (window.LEADERBOARD_WS_URL) return window.LEADERBOARD_WS_URL;
+    return 'ws://localhost:8000/ws';
+  }
+
+  var activeIds = new Set();
+  var queue = [];
+  var currentLive = null;
+  var ws = null;
+  var backoff = RECONNECT_INITIAL_MS;
+  var reconnectTimer = null;
+  var slideshow = null;
+
+  function buildSlide(person) {
+    var slide = document.createElement('div');
+    slide.className = 'slide live-detection';
+    slide.setAttribute('data-live-id', person.id);
+
+    var card = document.createElement('div');
+    card.className = 'card';
+
+    var badge = document.createElement('span');
+    badge.className = 'live-badge';
+    badge.textContent = 'LIVE';
+    card.appendChild(badge);
+
+    var header = document.createElement('div');
+    header.className = 'card-header';
+    var brand = document.createElement('div');
+    brand.className = 'brand';
+    var logo = document.createElement('img');
+    logo.src = 'York-logo-.png';
+    logo.className = 'brand-logo';
+    logo.alt = '';
+    var brandName = document.createElement('span');
+    brandName.className = 'brand-name';
+    brandName.textContent = 'Cursor Usage';
+    brand.appendChild(logo);
+    brand.appendChild(brandName);
+    header.appendChild(brand);
+    card.appendChild(header);
+
+    if (person.message) {
+      var greeting = document.createElement('div');
+      greeting.className = 'live-greeting';
+      greeting.textContent = person.message;
+      card.appendChild(greeting);
+    }
+
+    var name = document.createElement('h1');
+    name.className = 'live-name';
+    name.textContent = person.name || '';
+    card.appendChild(name);
+
+    if (person.department) {
+      var dept = document.createElement('p');
+      dept.className = 'live-department';
+      dept.textContent = person.department;
+      card.appendChild(dept);
+    }
+
+    var bar = document.createElement('div');
+    bar.className = 'live-progress';
+    card.appendChild(bar);
+
+    slide.appendChild(card);
+    return slide;
+  }
+
+  function showNext() {
+    if (currentLive || queue.length === 0) return;
+    if (!slideshow) {
+      slideshow = document.getElementById('slideshow');
+      if (!slideshow) return;
+    }
+    var person = queue.shift();
+    var el = buildSlide(person);
+    slideshow.appendChild(el);
+    // Force reflow so the transition fires when .active is added.
+    void el.offsetWidth;
+    el.classList.add('active');
+    requestAnimationFrame(function () {
+      var bar = el.querySelector('.live-progress');
+      if (bar) bar.style.width = '100%';
+    });
+    var hideTimer = setTimeout(function () {
+      el.classList.remove('active');
+      el.classList.add('exit');
+    }, HOLD_MS);
+    var removeTimer = setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+      activeIds.delete(person.id);
+      currentLive = null;
+      showNext();
+    }, HOLD_MS + EXIT_MS);
+    currentLive = { id: person.id, el: el, hideTimer: hideTimer, removeTimer: removeTimer };
+  }
+
+  function onMessage(raw) {
+    var msg;
+    try { msg = JSON.parse(raw); } catch (_) { return; }
+    if (!msg || msg.type !== 'PERSON_DETECTED') return;
+    var p = msg.payload;
+    if (!p || p.id == null) return;
+    var id = String(p.id);
+    if (activeIds.has(id)) return;
+    if (queue.length >= QUEUE_CAP) return;
+    activeIds.add(id);
+    queue.push({
+      id:         id,
+      name:       p.name != null ? String(p.name) : '',
+      department: p.department != null ? String(p.department) : '',
+      message:    p.message != null ? String(p.message) : ''
+    });
+    showNext();
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    var delay = backoff;
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = null;
+      backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
+      connect();
+    }, delay);
+  }
+
+  function connect() {
+    var url = resolveWsUrl();
+    try {
+      ws = new WebSocket(url);
+    } catch (_) {
+      scheduleReconnect();
+      return;
+    }
+    ws.onopen = function () {
+      backoff = RECONNECT_INITIAL_MS;
+    };
+    ws.onmessage = function (ev) { onMessage(ev.data); };
+    ws.onclose = function () { scheduleReconnect(); };
+    ws.onerror = function () {
+      try { ws.close(); } catch (_) {}
+    };
+  }
+
+  function boot() {
+    slideshow = document.getElementById('slideshow');
+    connect();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
 })();
 </script>
 </body>
