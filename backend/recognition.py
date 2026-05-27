@@ -88,14 +88,16 @@ def _parse_filename(stem: str) -> Optional[tuple[str, str]]:
     if "_" not in stem:
         return None
     raw_name, email = stem.split("_", 1)
+    print(raw_name, email)
     if not raw_name or not email or "@" not in email:
         return None
     if ".." in email or "/" in email or "\\" in email:
         return None
     if not _NAME_PREFIX_RE.match(raw_name):
         return None
+    print(raw_name, email)
     display = "-".join(part.capitalize() for part in raw_name.split("-"))
-    return display, email.lower()
+    return display.replace("-", " "), email.lower()
 
 
 # ─── Image decoding ──────────────────────────────────────────────────────────

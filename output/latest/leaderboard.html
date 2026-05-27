@@ -208,58 +208,6 @@
     z-index: 99;
   }
 
-  /* ── Live detection overlay (face-recognition WebSocket) ── */
-  .slide.live-detection { z-index: 50; }
-  .slide.live-detection .card { padding: 40px 48px 32px; }
-  .slide.live-detection .live-badge {
-    position: absolute; top: 24px; right: 24px;
-    background: var(--green); color: #fff;
-    border-radius: 999px; padding: 6px 14px;
-    font-weight: 700; font-size: 0.85rem; letter-spacing: 1px;
-  }
-  .slide.live-detection .live-body {
-    display: flex; align-items: flex-start; gap: 32px;
-    margin-top: 16px;
-  }
-  .slide.live-detection .live-avatar-wrap {
-    flex-shrink: 0;
-    width: 140px; height: 140px;
-    border-radius: 50%;
-    border: 4px solid var(--green);
-    overflow: hidden;
-    background: #f0f0f0;
-  }
-  .slide.live-detection .live-avatar {
-    width: 100%; height: 100%; object-fit: cover;
-  }
-  .slide.live-detection .live-info { flex: 1; min-width: 0; }
-  .slide.live-detection .live-name {
-    font-family: 'Bebas Neue', sans-serif; font-size: 4rem;
-    color: var(--green); margin: 0; line-height: 1;
-  }
-  .slide.live-detection .live-email {
-    font-size: 1.1rem; color: var(--text); opacity: 0.75;
-    margin: 8px 0 20px;
-  }
-  .slide.live-detection .live-metrics {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px 24px;
-  }
-  .slide.live-detection .live-metric-row {
-    font-size: 0.95rem; color: var(--text);
-  }
-  .slide.live-detection .live-metric-row strong {
-    display: block;
-    font-size: 1.35rem;
-    color: var(--dark);
-    margin-top: 2px;
-  }
-  .slide.live-detection .live-progress {
-    position: absolute; bottom: 0; left: 0; height: 4px; width: 0;
-    background: var(--green);
-    transition: width 10s linear;
-  }
 </style>
 </head>
 <body>
@@ -1019,10 +967,9 @@
 </script>
 
 <!--
-  Live face-detection overlay.
-  Self-contained: no shared globals with the slider IIFE above.
-  Paints `.slide.live-detection` (z-index 50) above the rotating leaderboard
-  whenever the backend broadcasts a PERSON_DETECTED WebSocket event.
+  Live face-detection slides.
+  Clones an existing weekly .slide frame and fills it with detection data so
+  the UI matches a normal leaderboard card (same classes, same layout).
 -->
 <script>
 (function () {
@@ -1031,6 +978,17 @@
   var QUEUE_CAP = 10;
   var RECONNECT_INITIAL_MS = 1000;
   var RECONNECT_MAX_MS = 30000;
+  var LIVE_RANK_COLOR = '#64748b';
+  var DEBUG_LIVE = false;
+  try {
+    DEBUG_LIVE = new URLSearchParams(window.location.search).has('live_debug');
+  } catch (_) {}
+
+  function liveLog() {
+    if (!DEBUG_LIVE) return;
+    var args = ['[live]'].concat(Array.prototype.slice.call(arguments));
+    console.log.apply(console, args);
+  }
 
   function resolveWsUrl() {
     try {
@@ -1049,6 +1007,27 @@
   var backoff = RECONNECT_INITIAL_MS;
   var reconnectTimer = null;
   var slideshow = null;
+  var slidePrototype = null;
+
+  function getSlidePrototype() {
+    if (!slideshow) {
+      slideshow = document.getElementById('slideshow');
+    }
+    if (!slidePrototype && slideshow) {
+      slidePrototype = slideshow.querySelector('.slide[data-rank]');
+      if (!slidePrototype && DEBUG_LIVE) {
+        console.warn('[live] no .slide[data-rank] prototype found in #slideshow');
+      }
+    }
+    return slidePrototype;
+  }
+
+  function isQueued(email) {
+    for (var i = 0; i < queue.length; i++) {
+      if (queue[i].email === email) return true;
+    }
+    return false;
+  }
 
   function faceImageUrl(imageFilename) {
     if (!imageFilename || !wsUrl) return '';
@@ -1067,95 +1046,87 @@
   function formatMetric(value) {
     if (value == null || value === '-') return '-';
     if (typeof value === 'number' && !isNaN(value)) {
-      return Number.isInteger(value) ? String(value) : value.toFixed(2);
+      if (Number.isInteger(value)) return value.toLocaleString();
+      return value.toFixed(2);
     }
     return String(value);
   }
 
-  function addMetricRow(parent, label, value) {
-    var row = document.createElement('div');
-    row.className = 'live-metric-row';
-    row.textContent = label + ':';
-    var strong = document.createElement('strong');
-    strong.textContent = formatMetric(value);
-    row.appendChild(strong);
-    parent.appendChild(row);
+  function setColMetric(statCol, itemIndex, value) {
+    if (!statCol) return;
+    var strongs = statCol.querySelectorAll('.stat-item strong');
+    if (strongs[itemIndex]) strongs[itemIndex].textContent = formatMetric(value);
   }
 
-  function buildSlide(person) {
-    var slide = document.createElement('div');
-    slide.className = 'slide live-detection';
-    slide.setAttribute('data-live-email', person.email);
-
-    var card = document.createElement('div');
-    card.className = 'card';
-
-    var badge = document.createElement('span');
-    badge.className = 'live-badge';
-    badge.textContent = 'LIVE';
-    card.appendChild(badge);
-
-    var header = document.createElement('div');
-    header.className = 'card-header';
-    var brand = document.createElement('div');
-    brand.className = 'brand';
-    var logo = document.createElement('img');
-    logo.src = 'York-logo-.png';
-    logo.className = 'brand-logo';
-    logo.alt = '';
-    var brandName = document.createElement('span');
-    brandName.className = 'brand-name';
-    brandName.textContent = 'Cursor Usage';
-    brand.appendChild(logo);
-    brand.appendChild(brandName);
-    header.appendChild(brand);
-    card.appendChild(header);
-
-    var body = document.createElement('div');
-    body.className = 'live-body';
-
-    var avatarWrap = document.createElement('div');
-    avatarWrap.className = 'live-avatar-wrap';
-    if (person.image) {
-      var avatar = document.createElement('img');
-      avatar.className = 'live-avatar';
-      avatar.alt = person.name || '';
-      avatar.src = faceImageUrl(person.image);
-      avatarWrap.appendChild(avatar);
+  function showAvatarPlaceholder(ring, person) {
+    var img = ring.querySelector('.avatar-img');
+    var letter = ((person.name || person.email || '?').charAt(0) || '?').toUpperCase();
+    var ph = document.createElement('div');
+    ph.className = 'avatar-placeholder';
+    ph.textContent = letter;
+    if (img) {
+      img.replaceWith(ph);
+    } else {
+      ring.appendChild(ph);
     }
-    body.appendChild(avatarWrap);
+  }
 
-    var info = document.createElement('div');
-    info.className = 'live-info';
-
-    var name = document.createElement('h1');
-    name.className = 'live-name';
-    name.textContent = person.name || '';
-    info.appendChild(name);
-
-    var emailEl = document.createElement('p');
-    emailEl.className = 'live-email';
-    emailEl.textContent = person.email || '';
-    info.appendChild(emailEl);
-
-    var metricsEl = document.createElement('div');
-    metricsEl.className = 'live-metrics';
+  function fillLiveSlide(slide, person) {
     var m = person.metrics || {};
-    addMetricRow(metricsEl, 'Total AI Lines', m.totalAiLines);
-    addMetricRow(metricsEl, 'Prompt Count', m.promptCount);
-    addMetricRow(metricsEl, 'Average Score', m.avgScore);
-    addMetricRow(metricsEl, 'Active Days', m.activeDays);
-    addMetricRow(metricsEl, 'Usage Score', m.usageScore != null ? m.usageScore : '-');
-    info.appendChild(metricsEl);
+    var rankCircle = slide.querySelector('.rank-circle');
+    if (rankCircle) rankCircle.style.setProperty('--rank-color', LIVE_RANK_COLOR);
 
-    body.appendChild(info);
-    card.appendChild(body);
+    var rankNum = slide.querySelector('.rank-num');
+    if (rankNum) {
+      rankNum.textContent = '—';
+      var sup = rankNum.querySelector('sup');
+      if (sup) sup.remove();
+    }
 
-    var bar = document.createElement('div');
-    bar.className = 'live-progress';
-    card.appendChild(bar);
+    var ring = slide.querySelector('.avatar-ring');
+    if (ring) ring.style.borderColor = LIVE_RANK_COLOR;
 
-    slide.appendChild(card);
+    var img = slide.querySelector('.avatar-img');
+    if (img && person.image) {
+      img.src = faceImageUrl(person.image);
+      img.alt = person.name || '';
+      img.onerror = function () { showAvatarPlaceholder(ring, person); };
+    } else if (ring) {
+      showAvatarPlaceholder(ring, person);
+    }
+
+    var nameEl = slide.querySelector('.person-name');
+    if (nameEl) nameEl.textContent = (person.name || '').toUpperCase();
+
+    var titleEl = slide.querySelector('.person-title');
+    if (titleEl) titleEl.textContent = person.email || '';
+
+    var cols = slide.querySelectorAll('.stat-col');
+    setColMetric(cols[0], 0, m.totalAiLines);
+    setColMetric(cols[0], 1, m.usageScore != null ? m.usageScore : '-');
+    setColMetric(cols[1], 0, m.promptCount);
+    setColMetric(cols[1], 1, m.avgScore);
+
+    var activeStrong = slide.querySelector('.active-days strong');
+    if (activeStrong) activeStrong.textContent = formatMetric(m.activeDays);
+
+    var finalStrong = slide.querySelector('.final-score-bar strong');
+    if (finalStrong) finalStrong.textContent = '-';
+  }
+
+  function buildLiveSlide(person) {
+    var proto = getSlidePrototype();
+    if (!proto) return null;
+    var slide = proto.cloneNode(true);
+    slide.classList.remove('active', 'exit');
+    slide.removeAttribute('data-rank');
+    slide.setAttribute('data-live-email', person.email);
+    var dots = slide.querySelector('.dots-row');
+    if (dots) {
+      dots.innerHTML = '';
+      dots.removeAttribute('id');
+    }
+    fillLiveSlide(slide, person);
     return slide;
   }
 
@@ -1165,27 +1136,33 @@
       slideshow = document.getElementById('slideshow');
       if (!slideshow) return;
     }
-    var person = queue.shift();
-    var el = buildSlide(person);
-    slideshow.appendChild(el);
-    // Force reflow so the transition fires when .active is added.
-    void el.offsetWidth;
-    el.classList.add('active');
-    requestAnimationFrame(function () {
-      var bar = el.querySelector('.live-progress');
-      if (bar) bar.style.width = '100%';
-    });
-    var hideTimer = setTimeout(function () {
-      el.classList.remove('active');
-      el.classList.add('exit');
-    }, HOLD_MS);
-    var removeTimer = setTimeout(function () {
-      if (el.parentNode) el.parentNode.removeChild(el);
-      activeIds.delete(person.email);
-      currentLive = null;
-      showNext();
-    }, HOLD_MS + EXIT_MS);
-    currentLive = { email: person.email, el: el, hideTimer: hideTimer, removeTimer: removeTimer };
+    while (queue.length > 0) {
+      var person = queue.shift();
+      var el = buildLiveSlide(person);
+      if (!el) {
+        console.warn('[live] buildLiveSlide failed for', person.email);
+        liveLog('build failed, trying next in queue');
+        continue;
+      }
+      slideshow.appendChild(el);
+      void el.offsetWidth;
+      el.classList.add('active');
+      activeIds.add(person.email);
+      liveLog('slide shown', person.email, el);
+      var hideTimer = setTimeout(function () {
+        el.classList.remove('active');
+        el.classList.add('exit');
+      }, HOLD_MS);
+      var removeTimer = setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+        activeIds.delete(person.email);
+        currentLive = null;
+        liveLog('slide removed', person.email);
+        showNext();
+      }, HOLD_MS + EXIT_MS);
+      currentLive = { email: person.email, el: el, hideTimer: hideTimer, removeTimer: removeTimer };
+      return;
+    }
   }
 
   function onMessage(raw) {
@@ -1195,9 +1172,10 @@
     var p = msg.payload;
     if (!p || !p.email) return;
     var email = String(p.email);
+    liveLog('PERSON_DETECTED', email);
     if (activeIds.has(email)) return;
+    if (isQueued(email)) return;
     if (queue.length >= QUEUE_CAP) return;
-    activeIds.add(email);
     queue.push({
       email:  email,
       name:   p.name != null ? String(p.name) : '',
@@ -1238,6 +1216,7 @@
 
   function boot() {
     slideshow = document.getElementById('slideshow');
+    getSlidePrototype();
     connect();
   }
 

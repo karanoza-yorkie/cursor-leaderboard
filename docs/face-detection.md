@@ -291,21 +291,43 @@ and the generator: only the static HTML files are touched.
   predate the generator-side realtime work. Re-running the full data pipeline
   was not required (or wanted) just to ship the live overlay; a surgical edit
   to the static files lights up the existing rendered cards immediately.
-- What: appended a small `.slide.live-detection` CSS block before `</style>`
-  and a new self-contained `<script>` IIFE immediately after the existing
-  slider IIFE. The existing slider markup, IIFE, CSS, and the 10 dummy slide
-  cards are untouched.
+- What: a self-contained `<script>` IIFE after the weekly slider IIFE clones an
+  existing `.slide[data-rank]` frame and fills it with detection data. **No
+  custom layout CSS** — live cards use the same classes and DOM tree as the
+  Top-10 slides (`person-section`, `stats-grid`, `active-days`, etc.).
+
+### UI: clone-and-fill (same frame as weekly slides)
+
+On `PERSON_DETECTED`, the script:
+
+1. Deep-clones the first weekly slide (`.slide[data-rank]`) as a structural prototype.
+2. Clears `.dots-row` (avoids duplicate dot ids).
+3. Fills fields via existing selectors only:
+
+| Region | Selector | Live value |
+|--------|----------|------------|
+| Rank | `.rank-num` | `—` (no ordinal) |
+| Avatar | `.avatar-img` or `.avatar-placeholder` | `GET /faces/{image}` from WS host |
+| Name | `.person-name` | Uppercased `name` |
+| Subtitle | `.person-title` | `email` |
+| Total AI Lines | USAGE column, 1st `strong` | `metrics.totalAiLines` |
+| Usage score | USAGE column, 2nd `strong` | `metrics.usageScore` (often `"-"`) |
+| Total Prompts | QUALITY column, 1st `strong` | `metrics.promptCount` |
+| Quality score | QUALITY column, 2nd `strong` | `metrics.avgScore` |
+| Active days | `.active-days strong` | `metrics.activeDays` |
+| Final score | `.final-score-bar strong` | `-` (no pipeline composite) |
+
+Rank/avatar accent color uses `#64748b` (same as rank 4+ in the generator).
 
 ### Behaviour
 
 - Listens on a WebSocket and reacts to `PERSON_DETECTED` events (same payload
   contract as `backend/main.py` broadcasts).
-- Renders a `<div class="slide live-detection">` at `z-index: 50` so it paints
-  above any active dummy slide. The existing rotation is **not** paused — it
-  keeps running underneath, invisibly.
-- Each live slide stays visible for **10 s**, then fades out via the existing
-  `.slide.exit` CSS transition (~700 ms) and is removed from the DOM.
-- **UI**: profile photo from `GET /faces/{image}` on the backend host (URL derived from the WebSocket base), name, email, and a metrics grid (Total AI Lines, Prompt Count, Average Score, Active Days, Usage Score).
+- Appends a normal `.slide` to `#slideshow`, adds `.active`, removes after **10 s**
+  via `.exit` (~700 ms) — same transitions as the weekly carousel.
+- The weekly slider IIFE is **not** modified; its `slides[]` snapshot is taken at
+  boot, so live slides do not join the 6 s rotation (they stack as later siblings).
+- Each live slide stays visible for **10 s**, then is removed from the DOM.
 - **Frontend dedupe**: detections with a `payload.email` currently being shown are
   silently dropped. The email is released when the slide's 10 s lifetime ends.
   This is in addition to the backend's per-email `Cooldown`.
@@ -342,12 +364,26 @@ the phone in the Browser compatibility section) and pass
 `output/latest/leaderboard.html` from `file://` or a local plain-HTTP server
 allows `ws://` without the mixed-content restriction.
 
+### Troubleshooting (live slide never appears)
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Backend logs `broadcast delivered=1/1` but TV shows nothing | Wrong HTML file | Open **`output/latest/leaderboard.html`** or **`docs/index.html`**, not root `leaderboard.html` (no WebSocket overlay). |
+| WS connected, first detect works, same person never again until reload | Old dedupe bug (fixed): `activeIds` was set before a successful build | Hard-refresh after updating; or append `?live_debug=1` and check console for `[live] buildLiveSlide failed`. |
+| WS never connects from phone tunnel | TV still on `ws://localhost:8000/ws` | Pass `?ws=wss://<your-tunnel>/ws` on the TV URL (same host as `/phone`). |
+| Slide in DOM but invisible | Clone inherited `exit` / missing `active` | Fixed: clones strip `active`/`exit` before fill; verify element has class `slide active`. |
+
+Enable verbose client tracing without changing code: open the TV page with
+`?live_debug=1` (can combine with `?ws=…`). Logs `PERSON_DETECTED`, build
+success/failure, and slide lifecycle in the browser console.
+
 ### Validation
 
 - Open the file with no backend: page renders normally, slider rotates, no
   console errors apart from the silent reconnect ladder.
 - Boot backend, open with `?ws=ws://localhost:8000/ws`, `POST /detect` the
-  reference photo: live slide appears, holds 10 s, fades out.
+  reference photo: live slide matches weekly card layout, holds 10 s, fades out.
+- Inspect DOM: live node is `.slide` only (no `live-detection` or `.live-*` classes).
 - Re-POST the same person inside 10 s: backend cooldown suppresses; if a raw
   duplicate `PERSON_DETECTED` is forced over the WS, the frontend `Set` drops
   it.
