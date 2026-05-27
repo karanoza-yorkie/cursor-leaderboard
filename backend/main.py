@@ -13,6 +13,7 @@ Routes
                    single host for both the page and the API (avoids
                    CORS gymnastics on the camera side).
 - GET   /health    Liveness probe; also exposes current connection count.
+- GET   /faces/{filename}  Serves reference photos for the TV overlay.
 
 Design notes
 ------------
@@ -35,8 +36,9 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
+from activity_client import Metrics, fetch_daily_metrics
 from fastapi import (
     FastAPI,
     File,
@@ -49,13 +51,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from recognition import (
-    KnownFaces,
-    MatchResult,
-    Person,
-    load_known_faces,
-    recognize_face,
-)
+from recognition import KnownFaces, MatchResult, load_known_faces, recognize_face
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -75,10 +71,17 @@ PHONE_HTML_PATH = REPO_ROOT / "frontend" / "phone.html"
 FACES_DIR = Path(os.getenv("FACES_DIR", str(REPO_ROOT / "data" / "faces")))
 FACE_MATCH_THRESHOLD: float = float(os.getenv("FACE_MATCH_THRESHOLD", "0.6"))
 FACE_DETECT_MODEL: str = os.getenv("FACE_DETECT_MODEL", "hog")
-DEFAULT_DEPARTMENT: str = os.getenv("DEFAULT_DEPARTMENT", "Engineering")
 REQUIRE_KNOWN_FACES: bool = os.getenv("REQUIRE_KNOWN_FACES", "1") not in (
     "0", "false", "False", "no", "",
 )
+DAILY_ACTIVITY_API_KEY: str | None = os.getenv("DAILY_ACTIVITY_API_KEY") or None
+
+
+class DetectionPayload(TypedDict):
+    name: str
+    email: str
+    image: str
+    metrics: Metrics
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -193,19 +196,26 @@ async def lifespan(app: FastAPI):
     if not known and REQUIRE_KNOWN_FACES:
         raise RuntimeError(
             f"No usable known faces in {FACES_DIR}. "
-            "Add reference photos named '<name>_<id>.jpg' or set "
+            "Add reference photos named '<name>_<email>.jpg' or set "
             "REQUIRE_KNOWN_FACES=0 to allow startup with an empty roster."
+        )
+
+    if not DAILY_ACTIVITY_API_KEY:
+        logger.warning(
+            "DAILY_ACTIVITY_API_KEY is not set; detections will broadcast "
+            "with placeholder metrics"
         )
 
     logger.info(
         "backend up cooldown=%.1fs max_image_bytes=%d allowed_origins=%s "
-        "known_faces=%d threshold=%.2f model=%s",
+        "known_faces=%d threshold=%.2f model=%s activity_api=%s",
         COOLDOWN_SECONDS,
         MAX_IMAGE_BYTES,
         ALLOWED_ORIGINS,
         len(known),
         FACE_MATCH_THRESHOLD,
         FACE_DETECT_MODEL,
+        "configured" if DAILY_ACTIVITY_API_KEY else "missing",
     )
     yield
     logger.info("backend shutting down")
@@ -305,19 +315,41 @@ async def phone_page() -> FileResponse:
     )
 
 
-def _build_person(match: MatchResult) -> Person:
-    """Assemble the WS payload from the recognizer's match.
+async def _build_detection_payload(match: MatchResult) -> DetectionPayload:
+    """Assemble the WS payload: identity from recognition, metrics from API."""
 
-    Department/message are mocked here per the spec; the recognizer
-    intentionally only returns identity + confidence.
-    """
-
+    metrics = await fetch_daily_metrics(match["email"])
     return {
-        "id":         match["id"],
-        "name":       match["name"],
-        "department": DEFAULT_DEPARTMENT,
-        "message":    f"Welcome {match['name']}!",
+        "name": match["name"],
+        "email": match["email"],
+        "image": match["image_filename"],
+        "metrics": metrics,
     }
+
+
+def _safe_face_path(filename: str) -> Path:
+    """Resolve a basename-only path under FACES_DIR or raise 404."""
+
+    safe_name = Path(filename).name
+    if not safe_name or safe_name != filename.strip():
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    candidate = FACES_DIR / safe_name
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Face image not found")
+    try:
+        candidate.resolve().relative_to(FACES_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Face image not found") from exc
+    return candidate
+
+
+@app.get("/faces/{filename}")
+async def serve_face(filename: str) -> FileResponse:
+    """Serve a reference face image for the TV live overlay."""
+
+    path = _safe_face_path(filename)
+    media = "image/jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post("/detect")
@@ -342,24 +374,29 @@ async def detect(
     if match is None:
         return JSONResponse({"status": "no_face", "person": None})
 
-    person = _build_person(match)
+    payload = await _build_detection_payload(match)
 
     cooldown: Cooldown = app.state.cooldown
-    if not await cooldown.should_broadcast(person["id"]):
+    if not await cooldown.should_broadcast(payload["email"]):
         logger.info(
-            "cooldown hit id=%s name=%s confidence=%.3f",
-            person["id"], person["name"], match["confidence"],
+            "cooldown hit email=%s name=%s confidence=%.3f",
+            payload["email"],
+            payload["name"],
+            match["confidence"],
         )
-        return JSONResponse({"status": "cooldown", "person": person})
+        return JSONResponse({"status": "cooldown", "person": payload})
 
     manager: ConnectionManager = app.state.connections
-    await manager.broadcast({"type": "PERSON_DETECTED", "payload": person})
+    await manager.broadcast({"type": "PERSON_DETECTED", "payload": payload})
     logger.info(
-        "detected id=%s name=%s confidence=%.3f",
-        person["id"], person["name"], match["confidence"],
+        "detected email=%s name=%s confidence=%.3f active_days=%s",
+        payload["email"],
+        payload["name"],
+        match["confidence"],
+        payload["metrics"]["activeDays"],
     )
 
-    return JSONResponse({"status": "face_detected", "person": person})
+    return JSONResponse({"status": "face_detected", "person": payload})
 
 
 @app.websocket("/ws")

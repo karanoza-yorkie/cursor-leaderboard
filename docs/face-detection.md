@@ -35,6 +35,7 @@ flowchart LR
 | WS     | `/ws`     | Server → client only. Initial `{"type":"HELLO"}` on connect.            | `{"type":"PERSON_DETECTED", "payload": {...}}`                          |
 | GET    | `/phone`  | Serves `frontend/phone.html` from the same origin as the API.           | `text/html`                                                              |
 | GET    | `/health` | Liveness probe.                                                         | `{"ok": true, "connections": N}`                                         |
+| GET    | `/faces/{filename}` | Reference photo for TV overlay (basename only).                 | `image/jpeg` or `image/png`                                              |
 
 ### Message schema
 
@@ -42,13 +43,21 @@ flowchart LR
 {
   "type": "PERSON_DETECTED",
   "payload": {
-    "id": "u123",
-    "name": "John Doe",
-    "department": "Engineering",
-    "message": "Welcome John!"
+    "name": "Nilesh",
+    "email": "nileshs@york.ie",
+    "image": "nilesh_nileshs@york.ie.jpg",
+    "metrics": {
+      "totalAiLines": 573,
+      "promptCount": 29,
+      "avgScore": 5.86,
+      "activeDays": 4,
+      "usageScore": "-"
+    }
   }
 }
 ```
+
+Cooldown and TV dedupe use **`email`**. Metrics come from the York daily-activity API (`backend/activity_client.py`) for a **rolling 7-day window ending today**. If the API fails or the key is unset, the face match still broadcasts with `"-"` placeholders (partial failure).
 
 ### Sequence
 
@@ -61,8 +70,9 @@ sequenceDiagram
     participant T as TV /ws
 
     P->>B: POST /detect (jpeg)
-    B->>B: recognition.identify(bytes)
-    B->>C: should_broadcast(person.id)
+    B->>B: recognize_face(bytes)
+    B->>B: fetch_daily_metrics(email) async
+    B->>C: should_broadcast(email)
     alt cooldown miss
         C-->>B: true
         B->>M: broadcast(PERSON_DETECTED)
@@ -107,7 +117,7 @@ Real recognition backed by the [`face_recognition`](https://github.com/ageitgey/
 
 **Known-face roster:** loaded once at app startup from `data/faces/` (override via `FACES_DIR`).
 
-- Filename convention: `<name>_<id>.<ext>` where `<ext>` ∈ `{jpg, jpeg, png}`. Name pattern is `[A-Za-z][A-Za-z0-9.\-]*`; id is `[A-Za-z0-9]+`. Display name is title-cased (`nilesh_YI141.jpg` → name "Nilesh", id "YI141").
+- Filename convention: `<name>_<email>.<ext>` where `<ext>` ∈ `{jpg, jpeg, png}`. Everything after the first `_` is the email (must contain `@`). Display name is title-cased (`nilesh_nileshs@york.ie.jpg` → name "Nilesh", email "nileshs@york.ie").
 - Bad filenames, zero-face images, and unreadable files are warned and skipped — never fatal.
 - Multi-face reference photos: first encoding is used, a warning is emitted.
 - Encodings are stacked into one `(N, 128)` numpy array at load time so per-probe distance is a single vectorised call.
@@ -124,7 +134,19 @@ Real recognition backed by the [`face_recognition`](https://github.com/ageitgey/
 - Phone uploads are pre-downsampled to 640 px longest edge by `frontend/phone.html`. On that input, a single recognition call is typically 80–200 ms on a modern laptop, 200–500 ms on slower devices. The capture loop is paced at 1.5 s so there's plenty of headroom.
 - Startup encoding cost is ~50–150 ms per reference photo. For dozens of faces, expect a one-time second or so.
 
-**To swap to InsightFace / a different model**, replace the body of `recognize_face` (and adapt `load_known_faces` to use the new encoder). Keep the input (`image_bytes`) and output (`{id, name, confidence}`) shapes — no other file changes.
+**To swap to InsightFace / a different model**, replace the body of `recognize_face` (and adapt `load_known_faces` to use the new encoder). Keep the input (`image_bytes`) and output (`{name, email, image_filename, confidence}`) shapes — no other file changes.
+
+### Daily activity metrics
+
+After a face match, `backend/activity_client.py` POSTs to the York daily-activity API with `startDate` / `endDate` from `backend/week_utils.get_week()` (rolling 7 days ending today) and `email: ["<matched email>"]`. Aggregates:
+
+- `totalAiLines` — sum of `totalAiLines`
+- `promptCount` — sum of `promptCount`
+- `avgScore` — arithmetic mean of `avgScore`, rounded to 2 decimals
+- `activeDays` — length of the `data` array
+- `usageScore` — always `"-"` (not available from API)
+
+Set `DAILY_ACTIVITY_API_KEY` in the environment. On API failure, partial fields are `"-"` and the detection still broadcasts.
 
 ## Configuration
 
@@ -140,7 +162,9 @@ All env vars are optional; sensible defaults make `uvicorn` + a locally-opened l
 | `FACES_DIR`             | `data/faces`             | `backend/main.py`             | Directory scanned at startup for reference photos.                                       |
 | `FACE_MATCH_THRESHOLD`  | `0.6`                    | `backend/main.py`             | Maximum face-distance to count as a match. Lower = stricter.                             |
 | `FACE_DETECT_MODEL`     | `hog`                    | `backend/main.py`             | dlib face detector: `hog` (CPU) or `cnn` (GPU build of dlib).                            |
-| `DEFAULT_DEPARTMENT`    | `Engineering`            | `backend/main.py`             | Mocked department in the WS payload (recognition doesn't carry org metadata).            |
+| `DAILY_ACTIVITY_API_KEY` | _(unset)_               | `backend/activity_client.py`  | API key for daily-activity metrics.                                                      |
+| `DAILY_ACTIVITY_URL`    | York prompts API URL     | `backend/activity_client.py`  | Override metrics endpoint.                                                               |
+| `ACTIVITY_TIMEOUT_SEC`  | `5`                      | `backend/activity_client.py`  | Per-detection HTTP timeout.                                                              |
 | `REQUIRE_KNOWN_FACES`   | `1`                      | `backend/main.py`             | If truthy, refuse to start when the roster is empty. Set `0` for dev / CI without faces. |
 
 ## Running locally
@@ -245,8 +269,10 @@ When you switch to HTTPS, rebuild the leaderboard with `BACKEND_WS_URL` set to `
 ## File map
 
 - `backend/main.py` — FastAPI app, routes, ConnectionManager, cooldown, lifespan.
-- `backend/recognition.py` — mock `identify`; swap point for real ML.
-- `backend/requirements.txt` — FastAPI / uvicorn / python-multipart. Kept separate from the weekly pipeline's `requirements.txt`.
+- `backend/recognition.py` — face match + email-based filename parsing.
+- `backend/week_utils.py` — `get_week()` rolling 7-day date range.
+- `backend/activity_client.py` — async daily-activity API client + aggregation.
+- `backend/requirements.txt` — FastAPI / uvicorn / httpx / face_recognition.
 - `frontend/phone.html` — vanilla-JS auto-capture page.
 - `src/tv_realtime.py` — CSS + JS injected into the generated leaderboard HTML.
 - `src/generate_leaderboard.py` — augmented to expose `window.__leaderboard` and to inline the realtime overlay.
@@ -279,9 +305,10 @@ and the generator: only the static HTML files are touched.
   keeps running underneath, invisibly.
 - Each live slide stays visible for **10 s**, then fades out via the existing
   `.slide.exit` CSS transition (~700 ms) and is removed from the DOM.
-- **Frontend dedupe**: detections with a `payload.id` currently being shown are
-  silently dropped. The id is released exactly when the slide's 10 s lifetime
-  ends. This is in addition to the backend's own per-id `Cooldown`.
+- **UI**: profile photo from `GET /faces/{image}` on the backend host (URL derived from the WebSocket base), name, email, and a metrics grid (Total AI Lines, Prompt Count, Average Score, Active Days, Usage Score).
+- **Frontend dedupe**: detections with a `payload.email` currently being shown are
+  silently dropped. The email is released when the slide's 10 s lifetime ends.
+  This is in addition to the backend's per-email `Cooldown`.
 - **Queue**: if multiple distinct people arrive while one is on screen, they
   are queued FIFO and shown sequentially as the current slide retires.
   Soft-capped at 10 to bound memory under runaway bursts; new arrivals beyond

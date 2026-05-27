@@ -210,23 +210,50 @@
 
   /* ── Live detection overlay (face-recognition WebSocket) ── */
   .slide.live-detection { z-index: 50; }
-  .slide.live-detection .card { padding: 48px 56px; }
+  .slide.live-detection .card { padding: 40px 48px 32px; }
   .slide.live-detection .live-badge {
     position: absolute; top: 24px; right: 24px;
     background: var(--green); color: #fff;
     border-radius: 999px; padding: 6px 14px;
     font-weight: 700; font-size: 0.85rem; letter-spacing: 1px;
   }
-  .slide.live-detection .live-greeting {
-    font-family: 'Bebas Neue', sans-serif; font-size: 3rem;
-    color: var(--text); margin: 32px 0 8px;
+  .slide.live-detection .live-body {
+    display: flex; align-items: flex-start; gap: 32px;
+    margin-top: 16px;
   }
+  .slide.live-detection .live-avatar-wrap {
+    flex-shrink: 0;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    border: 4px solid var(--green);
+    overflow: hidden;
+    background: #f0f0f0;
+  }
+  .slide.live-detection .live-avatar {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .slide.live-detection .live-info { flex: 1; min-width: 0; }
   .slide.live-detection .live-name {
-    font-family: 'Bebas Neue', sans-serif; font-size: 5.5rem;
+    font-family: 'Bebas Neue', sans-serif; font-size: 4rem;
     color: var(--green); margin: 0; line-height: 1;
   }
-  .slide.live-detection .live-department {
-    font-size: 1.4rem; color: var(--text); opacity: 0.7; margin-top: 18px;
+  .slide.live-detection .live-email {
+    font-size: 1.1rem; color: var(--text); opacity: 0.75;
+    margin: 8px 0 20px;
+  }
+  .slide.live-detection .live-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 24px;
+  }
+  .slide.live-detection .live-metric-row {
+    font-size: 0.95rem; color: var(--text);
+  }
+  .slide.live-detection .live-metric-row strong {
+    display: block;
+    font-size: 1.35rem;
+    color: var(--dark);
+    margin-top: 2px;
   }
   .slide.live-detection .live-progress {
     position: absolute; bottom: 0; left: 0; height: 4px; width: 0;
@@ -1018,14 +1045,47 @@
   var queue = [];
   var currentLive = null;
   var ws = null;
+  var wsUrl = '';
   var backoff = RECONNECT_INITIAL_MS;
   var reconnectTimer = null;
   var slideshow = null;
 
+  function faceImageUrl(imageFilename) {
+    if (!imageFilename || !wsUrl) return '';
+    try {
+      var u = new URL(wsUrl);
+      u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+      u.pathname = '/faces/' + encodeURIComponent(imageFilename);
+      u.search = '';
+      u.hash = '';
+      return u.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function formatMetric(value) {
+    if (value == null || value === '-') return '-';
+    if (typeof value === 'number' && !isNaN(value)) {
+      return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    }
+    return String(value);
+  }
+
+  function addMetricRow(parent, label, value) {
+    var row = document.createElement('div');
+    row.className = 'live-metric-row';
+    row.textContent = label + ':';
+    var strong = document.createElement('strong');
+    strong.textContent = formatMetric(value);
+    row.appendChild(strong);
+    parent.appendChild(row);
+  }
+
   function buildSlide(person) {
     var slide = document.createElement('div');
     slide.className = 'slide live-detection';
-    slide.setAttribute('data-live-id', person.id);
+    slide.setAttribute('data-live-email', person.email);
 
     var card = document.createElement('div');
     card.className = 'card';
@@ -1051,24 +1111,45 @@
     header.appendChild(brand);
     card.appendChild(header);
 
-    if (person.message) {
-      var greeting = document.createElement('div');
-      greeting.className = 'live-greeting';
-      greeting.textContent = person.message;
-      card.appendChild(greeting);
+    var body = document.createElement('div');
+    body.className = 'live-body';
+
+    var avatarWrap = document.createElement('div');
+    avatarWrap.className = 'live-avatar-wrap';
+    if (person.image) {
+      var avatar = document.createElement('img');
+      avatar.className = 'live-avatar';
+      avatar.alt = person.name || '';
+      avatar.src = faceImageUrl(person.image);
+      avatarWrap.appendChild(avatar);
     }
+    body.appendChild(avatarWrap);
+
+    var info = document.createElement('div');
+    info.className = 'live-info';
 
     var name = document.createElement('h1');
     name.className = 'live-name';
     name.textContent = person.name || '';
-    card.appendChild(name);
+    info.appendChild(name);
 
-    if (person.department) {
-      var dept = document.createElement('p');
-      dept.className = 'live-department';
-      dept.textContent = person.department;
-      card.appendChild(dept);
-    }
+    var emailEl = document.createElement('p');
+    emailEl.className = 'live-email';
+    emailEl.textContent = person.email || '';
+    info.appendChild(emailEl);
+
+    var metricsEl = document.createElement('div');
+    metricsEl.className = 'live-metrics';
+    var m = person.metrics || {};
+    addMetricRow(metricsEl, 'Total AI Lines', m.totalAiLines);
+    addMetricRow(metricsEl, 'Prompt Count', m.promptCount);
+    addMetricRow(metricsEl, 'Average Score', m.avgScore);
+    addMetricRow(metricsEl, 'Active Days', m.activeDays);
+    addMetricRow(metricsEl, 'Usage Score', m.usageScore != null ? m.usageScore : '-');
+    info.appendChild(metricsEl);
+
+    body.appendChild(info);
+    card.appendChild(body);
 
     var bar = document.createElement('div');
     bar.className = 'live-progress';
@@ -1100,11 +1181,11 @@
     }, HOLD_MS);
     var removeTimer = setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      activeIds.delete(person.id);
+      activeIds.delete(person.email);
       currentLive = null;
       showNext();
     }, HOLD_MS + EXIT_MS);
-    currentLive = { id: person.id, el: el, hideTimer: hideTimer, removeTimer: removeTimer };
+    currentLive = { email: person.email, el: el, hideTimer: hideTimer, removeTimer: removeTimer };
   }
 
   function onMessage(raw) {
@@ -1112,16 +1193,16 @@
     try { msg = JSON.parse(raw); } catch (_) { return; }
     if (!msg || msg.type !== 'PERSON_DETECTED') return;
     var p = msg.payload;
-    if (!p || p.id == null) return;
-    var id = String(p.id);
-    if (activeIds.has(id)) return;
+    if (!p || !p.email) return;
+    var email = String(p.email);
+    if (activeIds.has(email)) return;
     if (queue.length >= QUEUE_CAP) return;
-    activeIds.add(id);
+    activeIds.add(email);
     queue.push({
-      id:         id,
-      name:       p.name != null ? String(p.name) : '',
-      department: p.department != null ? String(p.department) : '',
-      message:    p.message != null ? String(p.message) : ''
+      email:  email,
+      name:   p.name != null ? String(p.name) : '',
+      image:  p.image != null ? String(p.image) : '',
+      metrics: p.metrics && typeof p.metrics === 'object' ? p.metrics : {}
     });
     showNext();
   }
@@ -1138,6 +1219,7 @@
 
   function connect() {
     var url = resolveWsUrl();
+    wsUrl = url;
     try {
       ws = new WebSocket(url);
     } catch (_) {
