@@ -33,7 +33,8 @@ HISTORY_HTML = f"output/history/{week_folder}.html"
 # ── Helpers (UNCHANGED) ──────────────────────────────────────────────────────
 RANK_SUFFIX = {1: "st", 2: "nd", 3: "rd"}
 
-API_KEY = os.getenv("HUB_API_KEY")
+# Required secret: fail fast if missing instead of running with empty auth.
+API_KEY = os.environ["HUB_API_KEY"]
 
 def fetch_photo_url(email):
     if not email:
@@ -42,8 +43,6 @@ def fetch_photo_url(email):
     email = quote(email)
 
     url = f"https://api.hub.york.ie/api/external/interview/get-profile-pic/{email}"
-
-    print("API KEY:", API_KEY)
 
     headers = {
         "x-api-key": API_KEY,

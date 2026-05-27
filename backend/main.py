@@ -74,7 +74,8 @@ FACE_DETECT_MODEL: str = os.getenv("FACE_DETECT_MODEL", "hog")
 REQUIRE_KNOWN_FACES: bool = os.getenv("REQUIRE_KNOWN_FACES", "1") not in (
     "0", "false", "False", "no", "",
 )
-DAILY_ACTIVITY_API_KEY: str | None = os.getenv("DAILY_ACTIVITY_API_KEY") or None
+# Required secret for metrics enrichment; fail fast when missing.
+DAILY_ACTIVITY_API_KEY: str = os.environ["DAILY_ACTIVITY_API_KEY"]
 
 
 class DetectionPayload(TypedDict):
@@ -200,12 +201,6 @@ async def lifespan(app: FastAPI):
             "REQUIRE_KNOWN_FACES=0 to allow startup with an empty roster."
         )
 
-    if not DAILY_ACTIVITY_API_KEY:
-        logger.warning(
-            "DAILY_ACTIVITY_API_KEY is not set; detections will broadcast "
-            "with placeholder metrics"
-        )
-
     logger.info(
         "backend up cooldown=%.1fs max_image_bytes=%d allowed_origins=%s "
         "known_faces=%d threshold=%.2f model=%s activity_api=%s",
@@ -215,7 +210,7 @@ async def lifespan(app: FastAPI):
         len(known),
         FACE_MATCH_THRESHOLD,
         FACE_DETECT_MODEL,
-        "configured" if DAILY_ACTIVITY_API_KEY else "missing",
+        "configured",
     )
     yield
     logger.info("backend shutting down")

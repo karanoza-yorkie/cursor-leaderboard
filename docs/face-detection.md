@@ -57,7 +57,7 @@ flowchart LR
 }
 ```
 
-Cooldown and TV dedupe use **`email`**. Metrics come from the York daily-activity API (`backend/activity_client.py`) for a **rolling 7-day window ending today**. If the API fails or the key is unset, the face match still broadcasts with `"-"` placeholders (partial failure).
+Cooldown and TV dedupe use **`email`**. Metrics come from the York daily-activity API (`backend/activity_client.py`) for a **rolling 7-day window ending today**. `DAILY_ACTIVITY_API_KEY` is required and loaded from environment/GitHub Secrets only.
 
 ### Sequence
 
@@ -159,7 +159,7 @@ After a face match, `backend/activity_client.py` POSTs to the York daily-activit
 - `activeDays` — length of the `data` array
 - `usageScore` — always `"-"` (not available from API)
 
-Set `DAILY_ACTIVITY_API_KEY` in the environment. On API failure, partial fields are `"-"` and the detection still broadcasts.
+Set `DAILY_ACTIVITY_API_KEY` in the environment. Missing key is a startup error (fail-fast). API/network failures still return placeholder metric fields.
 
 ## Configuration
 
@@ -175,7 +175,7 @@ All env vars are optional; sensible defaults make `uvicorn` + a locally-opened l
 | `FACES_DIR`             | `data/faces`             | `backend/main.py`             | Directory scanned at startup for reference photos.                                       |
 | `FACE_MATCH_THRESHOLD`  | `0.6`                    | `backend/main.py`             | Maximum face-distance to count as a match. Lower = stricter.                             |
 | `FACE_DETECT_MODEL`     | `hog`                    | `backend/main.py`             | dlib face detector: `hog` (CPU) or `cnn` (GPU build of dlib).                            |
-| `DAILY_ACTIVITY_API_KEY` | _(unset)_               | `backend/activity_client.py`  | API key for daily-activity metrics.                                                      |
+| `DAILY_ACTIVITY_API_KEY` | **required**            | `backend/activity_client.py`  | API key for daily-activity metrics. Backend fails fast if missing.                       |
 | `DAILY_ACTIVITY_URL`    | York prompts API URL     | `backend/activity_client.py`  | Override metrics endpoint.                                                               |
 | `ACTIVITY_TIMEOUT_SEC`  | `5`                      | `backend/activity_client.py`  | Per-detection HTTP timeout.                                                              |
 | `REQUIRE_KNOWN_FACES`   | `1`                      | `backend/main.py`             | If truthy, refuse to start when the roster is empty. Set `0` for dev / CI without faces. |

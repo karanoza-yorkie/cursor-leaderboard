@@ -22,7 +22,8 @@ DAILY_ACTIVITY_URL: str = os.getenv(
     "DAILY_ACTIVITY_URL",
     "https://prompts.yorkdevs.link/api/v1/users/daily-activity",
 )
-DAILY_ACTIVITY_API_KEY: str | None = os.getenv("DAILY_ACTIVITY_API_KEY", "pa_live_X6FnNRDFH75rzQ09582qojfwqe09") or None
+# Required secret: fail fast if missing to prevent silent insecure defaults.
+DAILY_ACTIVITY_API_KEY: str = os.environ["DAILY_ACTIVITY_API_KEY"]
 ACTIVITY_TIMEOUT_SEC: float = float(os.getenv("ACTIVITY_TIMEOUT_SEC", "5"))
 
 
@@ -121,10 +122,6 @@ def aggregate_daily_activity(payload: Any) -> Metrics:
 
 async def fetch_daily_metrics(email: str) -> Metrics:
     """POST daily-activity for ``email`` and return aggregated metrics."""
-
-    if not DAILY_ACTIVITY_API_KEY:
-        logger.warning("DAILY_ACTIVITY_API_KEY not set; returning placeholder metrics")
-        return _empty_metrics()
 
     start_date, end_date = get_week()
     body = {

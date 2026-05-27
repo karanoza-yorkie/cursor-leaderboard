@@ -1,7 +1,11 @@
 import pandas as pd
 import requests
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
+
+# Required secret: fail fast if missing instead of embedding credentials.
+DAILY_ACTIVITY_API_KEY = os.environ["DAILY_ACTIVITY_API_KEY"]
 
 # ============================================================
 # HELPERS (same as other files)
@@ -34,7 +38,7 @@ def run_analysis():
     url = "https://prompts.yorkdevs.link/api/v1/users/daily-activity"
 
     headers = {
-        "x-api-key": "pa_live_X6FnNRDFH75rzQ09582qojfwqe09",
+        "x-api-key": DAILY_ACTIVITY_API_KEY,
         "Content-Type": "application/json"
     }
 
