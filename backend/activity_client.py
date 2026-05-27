@@ -1,153 +1,142 @@
 """
-Async client for the York daily-activity API.
+Load per-user leaderboard metrics from pipeline-generated ``all_users.csv``.
 
-Aggregates per-user metrics for a rolling week. On partial failure,
-missing fields are returned as ``"-"`` (except ``activeDays`` which
-defaults to ``0``).
+No external API calls at runtime — the CSV is the single source of truth for
+live detection cards.
 """
 
 from __future__ import annotations
 
+import csv
 import logging
-import os
-from typing import Any, TypedDict, Union
+from pathlib import Path
+from typing import Optional, TypedDict, Union
 
-import httpx
-
-from week_utils import get_week
+from week_utils import resolve_all_users_csv
 
 logger = logging.getLogger(__name__)
 
-DAILY_ACTIVITY_URL: str = os.getenv(
-    "DAILY_ACTIVITY_URL",
-    "https://prompts.yorkdevs.link/api/v1/users/daily-activity",
-)
-# Required secret: fail fast if missing to prevent silent insecure defaults.
-DAILY_ACTIVITY_API_KEY: str = os.environ["DAILY_ACTIVITY_API_KEY"]
-ACTIVITY_TIMEOUT_SEC: float = float(os.getenv("ACTIVITY_TIMEOUT_SEC", "5"))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+_index_cache: dict[str, "Metrics"] | None = None
+_index_mtime: float | None = None
+_index_path: Path | None = None
 
 
 class Metrics(TypedDict):
-    totalAiLines: Union[int, str]
-    promptCount: Union[int, str]
-    avgScore: Union[float, str]
+    """Fields consumed by the TV live overlay (``fillLiveSlide``)."""
+
+    totalAiLines: Union[int, float, str]
+    promptCount: Union[int, float, str]
+    avgScore: Union[int, float, str]
     activeDays: int
-    usageScore: str
+    usageScore: Union[int, float, str]
+    finalScore: Union[int, float, str]
+    rank: int
 
 
-def _empty_metrics() -> Metrics:
-    return {
-        "totalAiLines": "-",
-        "promptCount": "-",
-        "avgScore": "-",
-        "activeDays": 0,
-        "usageScore": "-",
-    }
+def _cell(row: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip() != "":
+            return str(value).strip()
+    return "-"
 
 
-def _extract_rows(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [r for r in payload if isinstance(r, dict)]
-    if not isinstance(payload, dict):
-        return []
-    if isinstance(payload.get("data"), list):
-        return [r for r in payload["data"] if isinstance(r, dict)]
-    result = payload.get("result")
-    if isinstance(result, dict) and isinstance(result.get("items"), list):
-        return [r for r in result["items"] if isinstance(r, dict)]
-    return []
+def _active_days(row: dict[str, str]) -> int:
+    raw = _cell(row, "Active_Days")
+    if raw == "-":
+        return 0
+    try:
+        return int(float(raw))
+    except (ValueError, TypeError):
+        return 0
 
 
-def _row_value(row: dict[str, Any], *candidates: str) -> Any:
-    lower_map = {k.lower(): v for k, v in row.items()}
-    for key in candidates:
-        if key in row:
-            return row[key]
-        val = lower_map.get(key.lower())
-        if val is not None:
-            return val
+def _row_email(row: dict[str, str]) -> Optional[str]:
+    for key in ("Email", "email"):
+        raw = row.get(key, "").strip()
+        if raw and "@" in raw:
+            return raw.lower()
     return None
 
 
-def _aggregate_rows(rows: list[dict[str, Any]]) -> Metrics:
-    if not rows:
-        return _empty_metrics()
-
-    total_ai = 0
-    total_prompts = 0
-    scores: list[float] = []
-    ai_ok = False
-    prompt_ok = False
-
-    for row in rows:
-        raw_ai = _row_value(row, "totalAiLines", "total_ai_lines")
-        if raw_ai is not None:
-            try:
-                total_ai += int(float(raw_ai))
-                ai_ok = True
-            except (TypeError, ValueError):
-                pass
-
-        raw_prompt = _row_value(row, "promptCount", "prompt_count")
-        if raw_prompt is not None:
-            try:
-                total_prompts += int(float(raw_prompt))
-                prompt_ok = True
-            except (TypeError, ValueError):
-                pass
-
-        raw_score = _row_value(row, "avgScore", "avg_score")
-        if raw_score is not None:
-            try:
-                scores.append(float(raw_score))
-            except (TypeError, ValueError):
-                pass
-
-    metrics: Metrics = {
-        "totalAiLines": total_ai if ai_ok else "-",
-        "promptCount": total_prompts if prompt_ok else "-",
-        "avgScore": round(sum(scores) / len(scores), 2) if scores else "-",
-        "activeDays": len(rows),
-        "usageScore": "-",
-    }
-    return metrics
-
-
-def aggregate_daily_activity(payload: Any) -> Metrics:
-    """Parse API JSON and aggregate metrics for a single-email response."""
-
-    rows = _extract_rows(payload)
-    return _aggregate_rows(rows)
-
-
-async def fetch_daily_metrics(email: str) -> Metrics:
-    """POST daily-activity for ``email`` and return aggregated metrics."""
-
-    start_date, end_date = get_week()
-    body = {
-        "startDate": start_date,
-        "endDate": end_date,
-        "email": [email],
-    }
-    headers = {
-        "x-api-key": DAILY_ACTIVITY_API_KEY,
-        "Content-Type": "application/json",
-    }
-
+def _final_score_sort_key(row: dict[str, str]) -> float:
+    raw = row.get("final_score", "")
     try:
-        async with httpx.AsyncClient(timeout=ACTIVITY_TIMEOUT_SEC) as client:
-            response = await client.post(
-                DAILY_ACTIVITY_URL,
-                headers=headers,
-                json=body,
-            )
-            response.raise_for_status()
-            payload = response.json()
-    except httpx.HTTPError as exc:
-        logger.warning("Daily activity API request failed for %s: %s", email, exc)
-        return _empty_metrics()
-    except ValueError as exc:
-        logger.warning("Daily activity API returned invalid JSON for %s: %s", email, exc)
-        return _empty_metrics()
+        return float(raw) if raw not in (None, "") else 0.0
+    except (ValueError, TypeError):
+        return 0.0
 
-    return aggregate_daily_activity(payload)
+
+def _row_to_metrics(row: dict[str, str], rank: int) -> Metrics:
+    """Map one CSV row to the WS payload metrics object (no recalculation)."""
+
+    return {
+        "totalAiLines": _cell(row, "Total_AI_Lines"),
+        "promptCount": _cell(row, "Total_Prompts", "total_prompts"),
+        "avgScore": _cell(row, "quality_score"),
+        "activeDays": _active_days(row),
+        "usageScore": _cell(row, "usage_score"),
+        "finalScore": _cell(row, "final_score"),
+        "rank": rank,
+    }
+
+
+def _load_index() -> dict[str, Metrics]:
+    """Load or reload the email → metrics index when the CSV file changes."""
+
+    global _index_cache, _index_mtime, _index_path
+
+    path = resolve_all_users_csv(REPO_ROOT)
+    if not path.is_file():
+        logger.warning("all_users.csv not found at %s", path)
+        _index_cache = {}
+        _index_mtime = None
+        _index_path = path
+        return {}
+
+    mtime = path.stat().st_mtime
+    if (
+        _index_cache is not None
+        and _index_path == path
+        and _index_mtime == mtime
+    ):
+        return _index_cache
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    ranked = sorted(rows, key=_final_score_sort_key, reverse=True)
+    index: dict[str, Metrics] = {}
+    for rank, row in enumerate(ranked, start=1):
+        email = _row_email(row)
+        if not email or email in index:
+            continue
+        index[email] = _row_to_metrics(row, rank)
+
+    _index_cache = index
+    _index_mtime = mtime
+    _index_path = path
+    logger.info("Loaded %d users from %s", len(index), path)
+    return index
+
+
+def preload_metrics_index() -> Path:
+    """Warm the CSV index at startup; returns the resolved CSV path."""
+
+    path = resolve_all_users_csv(REPO_ROOT)
+    _load_index()
+    return path
+
+
+def fetch_daily_metrics(email: str) -> Optional[Metrics]:
+    """Look up precomputed metrics by email. Returns ``None`` if not in CSV."""
+
+    if not email or "@" not in email:
+        return None
+    key = email.strip().lower()
+    metrics = _load_index().get(key)
+    if metrics is None:
+        logger.info("metrics_not_found email=%s", key)
+    return metrics

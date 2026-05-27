@@ -38,7 +38,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, TypedDict
 
-from activity_client import Metrics, fetch_daily_metrics
+from activity_client import Metrics, fetch_daily_metrics, preload_metrics_index
 from fastapi import (
     FastAPI,
     File,
@@ -74,10 +74,6 @@ FACE_DETECT_MODEL: str = os.getenv("FACE_DETECT_MODEL", "hog")
 REQUIRE_KNOWN_FACES: bool = os.getenv("REQUIRE_KNOWN_FACES", "1") not in (
     "0", "false", "False", "no", "",
 )
-# Required secret for metrics enrichment; fail fast when missing.
-DAILY_ACTIVITY_API_KEY: str = os.environ["DAILY_ACTIVITY_API_KEY"]
-
-
 class DetectionPayload(TypedDict):
     name: str
     email: str
@@ -201,16 +197,17 @@ async def lifespan(app: FastAPI):
             "REQUIRE_KNOWN_FACES=0 to allow startup with an empty roster."
         )
 
+    metrics_csv = await asyncio.to_thread(preload_metrics_index)
     logger.info(
         "backend up cooldown=%.1fs max_image_bytes=%d allowed_origins=%s "
-        "known_faces=%d threshold=%.2f model=%s activity_api=%s",
+        "known_faces=%d threshold=%.2f model=%s metrics_csv=%s",
         COOLDOWN_SECONDS,
         MAX_IMAGE_BYTES,
         ALLOWED_ORIGINS,
         len(known),
         FACE_MATCH_THRESHOLD,
         FACE_DETECT_MODEL,
-        "configured",
+        metrics_csv,
     )
     yield
     logger.info("backend shutting down")
@@ -310,18 +307,6 @@ async def phone_page() -> FileResponse:
     )
 
 
-async def _build_detection_payload(match: MatchResult) -> DetectionPayload:
-    """Assemble the WS payload: identity from recognition, metrics from API."""
-
-    metrics = await fetch_daily_metrics(match["email"])
-    return {
-        "name": match["name"],
-        "email": match["email"],
-        "image": match["image_filename"],
-        "metrics": metrics,
-    }
-
-
 def _safe_face_path(filename: str) -> Path:
     """Resolve a basename-only path under FACES_DIR or raise 404."""
 
@@ -369,7 +354,19 @@ async def detect(
     if match is None:
         return JSONResponse({"status": "no_face", "person": None})
 
-    payload = await _build_detection_payload(match)
+    metrics: Optional[Metrics] = await asyncio.to_thread(
+        fetch_daily_metrics, match["email"]
+    )
+    if metrics is None:
+        # No CSV row for this email — do not broadcast or expose person data.
+        return JSONResponse({"status": "metrics_not_found", "person": None})
+
+    payload: DetectionPayload = {
+        "name": match["name"],
+        "email": match["email"],
+        "image": match["image_filename"],
+        "metrics": metrics,
+    }
 
     cooldown: Cooldown = app.state.cooldown
     if not await cooldown.should_broadcast(payload["email"]):

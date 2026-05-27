@@ -1111,7 +1111,11 @@
     if (activeStrong) activeStrong.textContent = formatMetric(m.activeDays);
 
     var finalStrong = slide.querySelector('.final-score-bar strong');
-    if (finalStrong) finalStrong.textContent = '-';
+    if (finalStrong) {
+      finalStrong.textContent = formatMetric(
+        m.finalScore != null ? m.finalScore : '-'
+      );
+    }
   }
 
   function buildLiveSlide(person) {

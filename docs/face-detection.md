@@ -31,7 +31,7 @@ flowchart LR
 
 | Method | Path      | Body / Notes                                                            | Response                                                                 |
 | ------ | --------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| POST   | `/detect` | `multipart/form-data` field `image` **or** `application/json` `{image_b64}` | `{status: "face_detected"\|"cooldown"\|"no_face", person: {...}\|null}` |
+| POST   | `/detect` | `multipart/form-data` field `image` **or** `application/json` `{image_b64}` | `{status: "face_detected"\|"cooldown"\|"no_face"\|"metrics_not_found", person: {...}\|null}` |
 | WS     | `/ws`     | Server → client only. Initial `{"type":"HELLO"}` on connect.            | `{"type":"PERSON_DETECTED", "payload": {...}}`                          |
 | GET    | `/phone`  | Serves `frontend/phone.html` from the same origin as the API.           | `text/html`                                                              |
 | GET    | `/health` | Liveness probe.                                                         | `{"ok": true, "connections": N}`                                         |
@@ -57,7 +57,7 @@ flowchart LR
 }
 ```
 
-Cooldown and TV dedupe use **`email`**. Metrics come from the York daily-activity API (`backend/activity_client.py`) for a **rolling 7-day window ending today**. `DAILY_ACTIVITY_API_KEY` is required and loaded from environment/GitHub Secrets only.
+Cooldown and TV dedupe use **`email`**. Live metrics come from the pipeline CSV (`backend/activity_client.py` reads `data/processed/{week}/all_users.csv`) — no external API at runtime. If the matched email is not in the CSV, the backend returns `metrics_not_found` and does not broadcast.
 
 ### Sequence
 
@@ -71,7 +71,10 @@ sequenceDiagram
 
     P->>B: POST /detect (jpeg)
     B->>B: recognize_face(bytes)
-    B->>B: fetch_daily_metrics(email) async
+    B->>B: fetch_daily_metrics(email) from CSV
+    alt email not in CSV
+        B-->>P: 200 {status: metrics_not_found, person: null}
+    else email found
     B->>C: should_broadcast(email)
     alt cooldown miss
         C-->>B: true
@@ -81,6 +84,7 @@ sequenceDiagram
     else cooldown hit
         C-->>B: false
         B-->>P: 200 {status: cooldown}
+    end
     end
 ```
 
@@ -149,17 +153,21 @@ If image URLs return 401/403 without auth, the script retries the download with 
 
 **To swap to InsightFace / a different model**, replace the body of `recognize_face` (and adapt `load_known_faces` to use the new encoder). Keep the input (`image_bytes`) and output (`{name, email, image_filename, confidence}`) shapes — no other file changes.
 
-### Daily activity metrics
+### Live metrics (CSV)
 
-After a face match, `backend/activity_client.py` POSTs to the York daily-activity API with `startDate` / `endDate` from `backend/week_utils.get_week()` (rolling 7 days ending today) and `email: ["<matched email>"]`. Aggregates:
+After a face match, `backend/activity_client.py` looks up the email in `all_users.csv` (default path: `data/processed/{last_monday}_{last_friday}/all_users.csv`, same week folder as `src/analysis.py`). Fields are copied directly from the CSV — no runtime aggregation:
 
-- `totalAiLines` — sum of `totalAiLines`
-- `promptCount` — sum of `promptCount`
-- `avgScore` — arithmetic mean of `avgScore`, rounded to 2 decimals
-- `activeDays` — length of the `data` array
-- `usageScore` — always `"-"` (not available from API)
+| Payload field | CSV column |
+|---------------|------------|
+| `metrics.totalAiLines` | `Total_AI_Lines` |
+| `metrics.promptCount` | `Total_Prompts` (fallback `total_prompts`) |
+| `metrics.avgScore` | `quality_score` |
+| `metrics.activeDays` | `Active_Days` |
+| `metrics.usageScore` | `usage_score` |
+| `metrics.finalScore` | `final_score` |
+| `metrics.rank` | computed at load (sort by `final_score` desc) |
 
-Set `DAILY_ACTIVITY_API_KEY` in the environment. Missing key is a startup error (fail-fast). API/network failures still return placeholder metric fields.
+Override the file with `ALL_USERS_CSV=/path/to/all_users.csv`. The weekly pipeline (`src/analysis.py`) still calls the Daily Activity API to **generate** this CSV; uvicorn does not need `DAILY_ACTIVITY_API_KEY`.
 
 ## Configuration
 
@@ -175,9 +183,8 @@ All env vars are optional; sensible defaults make `uvicorn` + a locally-opened l
 | `FACES_DIR`             | `data/faces`             | `backend/main.py`             | Directory scanned at startup for reference photos.                                       |
 | `FACE_MATCH_THRESHOLD`  | `0.6`                    | `backend/main.py`             | Maximum face-distance to count as a match. Lower = stricter.                             |
 | `FACE_DETECT_MODEL`     | `hog`                    | `backend/main.py`             | dlib face detector: `hog` (CPU) or `cnn` (GPU build of dlib).                            |
-| `DAILY_ACTIVITY_API_KEY` | **required**            | `backend/activity_client.py`  | API key for daily-activity metrics. Backend fails fast if missing.                       |
-| `DAILY_ACTIVITY_URL`    | York prompts API URL     | `backend/activity_client.py`  | Override metrics endpoint.                                                               |
-| `ACTIVITY_TIMEOUT_SEC`  | `5`                      | `backend/activity_client.py`  | Per-detection HTTP timeout.                                                              |
+| `ALL_USERS_CSV`         | `data/processed/{week}/all_users.csv` | `backend/activity_client.py` | Precomputed metrics CSV for live detections. |
+| `DAILY_ACTIVITY_API_KEY` | _(pipeline only)_       | `src/analysis.py`             | API key to build `all_users.csv` in CI; not required for uvicorn.                          |
 | `REQUIRE_KNOWN_FACES`   | `1`                      | `backend/main.py`             | If truthy, refuse to start when the roster is empty. Set `0` for dev / CI without faces. |
 | `EXTERNAL_API_SECRET`   | _(unset)_                | `download_faces.py`           | York Hub external API key for bulk roster download (not used by uvicorn at runtime). |
 

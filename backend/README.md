@@ -24,7 +24,7 @@ python3.11 -m venv .venv
 
 On startup the backend loads every `<name>_<email>.{jpg,jpeg,png}` from `data/faces/` (email is everything after the first `_`, must contain `@`), encodes each face once, and logs the roster. By default it refuses to start with an empty roster — set `REQUIRE_KNOWN_FACES=0` to override (e.g. for CI).
 
-Set `DAILY_ACTIVITY_API_KEY` so `/detect` can fetch real usage metrics for the matched employee (rolling 7-day window). The backend now fails fast if this secret is missing.
+Live detection metrics are read from `data/processed/{week}/all_users.csv` (see `ALL_USERS_CSV` to override). No Daily Activity API call at runtime. Ensure the pipeline has generated `all_users.csv` for the current week folder.
 
 - Phone: open `http://<host>:8000/phone`
 - Health: `curl http://<host>:8000/health`
@@ -47,9 +47,7 @@ Set `DAILY_ACTIVITY_API_KEY` so `/detect` can fetch real usage metrics for the m
 | `FACE_MATCH_THRESHOLD` | `0.6`                    | Max face-distance to count as a match (lower = stricter).                                |
 | `FACE_DETECT_MODEL`    | `hog`                    | dlib face detector: `hog` (CPU) or `cnn` (GPU build).                                    |
 | `REQUIRE_KNOWN_FACES`  | `1`                      | If truthy, refuse to start with an empty roster. Set `0` for dev / CI without faces.     |
-| `DAILY_ACTIVITY_API_KEY` | **required**            | API key for York daily-activity metrics. Backend startup fails if missing.                |
-| `DAILY_ACTIVITY_URL`   | `https://prompts.yorkdevs.link/api/v1/users/daily-activity` | Override the metrics API endpoint.                          |
-| `ACTIVITY_TIMEOUT_SEC` | `5`                      | HTTP timeout when fetching daily activity per detection.                                 |
+| `ALL_USERS_CSV`        | `data/processed/{week}/all_users.csv` | Precomputed metrics for live `/detect` (CSV lookup by email). |
 | `BACKEND_WS_URL`       | `ws://localhost:8000/ws` | Read by `src/generate_leaderboard.py` only (build-time).                                 |
 
 ## LAN testing with a real phone
@@ -99,6 +97,6 @@ See [`docs/face-detection.md#technical-details`](../docs/face-detection.md#techn
 ## Required GitHub Secrets
 
 - `HUB_API_KEY` — used by the weekly pipeline/generator.
-- `DAILY_ACTIVITY_API_KEY` — used by backend metrics + `src/analysis.py`.
+- `DAILY_ACTIVITY_API_KEY` — used by `src/analysis.py` to generate `all_users.csv` (not required for uvicorn).
 - `CURSOR_STATE` — used by workflow session restore.
 - `EXTERNAL_API_SECRET` — required only if CI will run `download_faces.py`.

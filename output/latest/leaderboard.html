@@ -101,11 +101,12 @@
   }
   .rank-num {
     position: absolute; top: 0; left: 16px;
+    z-index: 999;
     font-family: 'Bebas Neue', sans-serif;
     font-size: 4.5rem; color: var(--rank-color, var(--green));
     line-height: 1;
   }
-  .rank-num sup { font-size: 1.8rem; vertical-align: super; }
+  .rank-num sup { font-size: 1.8rem; vertical-align: super; z-index: 999; }
   .avatar-ring {
     position: absolute; bottom: 0; left: 30px;
     width: 140px; height: 140px;
@@ -1071,17 +1072,30 @@
     }
   }
 
+  function ordinalParts(num) {
+  if (num % 100 >= 11 && num % 100 <= 13) {
+    return { number: num, suffix: 'th' };
+  }
+
+  switch (num % 10) {
+    case 1: return { number: num, suffix: 'st' };
+    case 2: return { number: num, suffix: 'nd' };
+    case 3: return { number: num, suffix: 'rd' };
+    default: return { number: num, suffix: 'th' };
+  }
+}
+
   function fillLiveSlide(slide, person) {
     var m = person.metrics || {};
     var rankCircle = slide.querySelector('.rank-circle');
     if (rankCircle) rankCircle.style.setProperty('--rank-color', LIVE_RANK_COLOR);
 
     var rankNum = slide.querySelector('.rank-num');
-    if (rankNum) {
-      rankNum.textContent = '—';
-      var sup = rankNum.querySelector('sup');
-      if (sup) sup.remove();
-    }
+if (rankNum) {
+  const { number, suffix } = ordinalParts(person.metrics.rank);
+
+  rankNum.innerHTML = `${number}<sup>${suffix}</sup>`;
+}
 
     var ring = slide.querySelector('.avatar-ring');
     if (ring) ring.style.borderColor = LIVE_RANK_COLOR;
@@ -1111,7 +1125,11 @@
     if (activeStrong) activeStrong.textContent = formatMetric(m.activeDays);
 
     var finalStrong = slide.querySelector('.final-score-bar strong');
-    if (finalStrong) finalStrong.textContent = '-';
+    if (finalStrong) {
+      finalStrong.textContent = formatMetric(
+        m.finalScore != null ? m.finalScore : '-'
+      );
+    }
   }
 
   function buildLiveSlide(person) {
