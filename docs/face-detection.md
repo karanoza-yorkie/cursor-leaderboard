@@ -117,11 +117,24 @@ Real recognition backed by the [`face_recognition`](https://github.com/ageitgey/
 
 **Known-face roster:** loaded once at app startup from `data/faces/` (override via `FACES_DIR`).
 
-- Filename convention: `<name>_<email>.<ext>` where `<ext>` ∈ `{jpg, jpeg, png}`. Everything after the first `_` is the email (must contain `@`). Display name is title-cased (`nilesh_nileshs@york.ie.jpg` → name "Nilesh", email "nileshs@york.ie").
+- Filename convention: `<normalized-name>_<email>.<ext>` where `<ext>` ∈ `{jpg, jpeg, png}`. Everything after the first `_` is the email (must contain `@`). The name segment is lowercase with spaces as hyphens (e.g. `nilesh-sukhwani_nileshs@york.ie.jpg` → display name "Nilesh Sukhwani", email `nileshs@york.ie`).
 - Bad filenames, zero-face images, and unreadable files are warned and skipped — never fatal.
 - Multi-face reference photos: first encoding is used, a warning is emitted.
 - Encodings are stacked into one `(N, 128)` numpy array at load time so per-probe distance is a single vectorised call.
 - Empty roster + `REQUIRE_KNOWN_FACES=1` (the default) → uvicorn refuses to start. Set `REQUIRE_KNOWN_FACES=0` for dev / CI without reference photos.
+
+**Refreshing the roster from York Hub**
+
+Use the repo-root script [`download_faces.py`](../download_faces.py) to pull profile photos for all active employees:
+
+```bash
+export EXTERNAL_API_SECRET=your_hub_external_api_key
+python download_faces.py
+```
+
+The script calls `GET https://api.hub.york.ie/api/external/users/active`, downloads each `profile_image` into `data/faces/`, and overwrites existing files for the same email. Users without a profile image or with unreachable URLs are skipped (batch continues). Restart uvicorn after a download so `recognition.py` reloads encodings.
+
+If image URLs return 401/403 without auth, the script retries the download with the same `x-api-key` header. Add `--verbose` for debug logs (URLs truncated).
 
 **Architecture:**
 
@@ -166,6 +179,7 @@ All env vars are optional; sensible defaults make `uvicorn` + a locally-opened l
 | `DAILY_ACTIVITY_URL`    | York prompts API URL     | `backend/activity_client.py`  | Override metrics endpoint.                                                               |
 | `ACTIVITY_TIMEOUT_SEC`  | `5`                      | `backend/activity_client.py`  | Per-detection HTTP timeout.                                                              |
 | `REQUIRE_KNOWN_FACES`   | `1`                      | `backend/main.py`             | If truthy, refuse to start when the roster is empty. Set `0` for dev / CI without faces. |
+| `EXTERNAL_API_SECRET`   | _(unset)_                | `download_faces.py`           | York Hub external API key for bulk roster download (not used by uvicorn at runtime). |
 
 ## Running locally
 
