@@ -214,35 +214,52 @@ def recognize_face(
 ) -> Optional[MatchResult]:
     """Identify the best-matching known face in ``image_bytes``."""
 
-    if not known:
-        return None
-
     image = _decode_image_to_rgb(image_bytes)
     if image is None:
         return None
 
     locations = face_recognition.face_locations(image, model=model)
     if not locations:
+        # No face detected at all
         return None
 
+    # At least one face detected
     encodings = face_recognition.face_encodings(
         image, known_face_locations=locations[:1]
     )
     if not encodings:
         return None
+
     probe = encodings[0]
+
+    # If no known faces exist, person is detected but not matched
+    # If no known faces exist, person is detected but not matched
+    if known is None or known.encodings is None or known.encodings.size == 0:
+        return {
+            "person_detected": True,
+            "matched": False,
+        }
 
     distances = face_recognition.face_distance(known.encodings, probe)
     if distances.size == 0:
-        return None
+        return {
+            "person_detected": True,
+            "matched": False,
+        }
 
     matches = face_recognition.compare_faces(
         list(known.encodings), probe, tolerance=threshold
     )
+
     best_idx = int(np.argmin(distances))
     if not matches[best_idx]:
-        return None
+        # Face detected, but no known match
+        return {
+            "person_detected": True,
+            "matched": False,
+        }
 
+    # Match found
     distance = float(distances[best_idx])
     confidence = round(max(0.0, min(1.0, 1.0 - distance)), 3)
 
@@ -254,7 +271,10 @@ def recognize_face(
         distance,
         confidence,
     )
+
     return {
+        "person_detected": True,
+        "matched": True,
         "name": match.name,
         "email": match.email,
         "image_filename": match.image_filename,

@@ -69,7 +69,7 @@ PHONE_HTML_PATH = REPO_ROOT / "frontend" / "phone.html"
 # Real face-recognition config. Encodings are loaded once in the
 # lifespan; the route only reads from the cache.
 FACES_DIR = Path(os.getenv("FACES_DIR", str(REPO_ROOT / "data" / "faces")))
-FACE_MATCH_THRESHOLD: float = float(os.getenv("FACE_MATCH_THRESHOLD", "0.6"))
+FACE_MATCH_THRESHOLD: float = float(os.getenv("FACE_MATCH_THRESHOLD", "0.45"))
 FACE_DETECT_MODEL: str = os.getenv("FACE_DETECT_MODEL", "hog")
 REQUIRE_KNOWN_FACES: bool = os.getenv("REQUIRE_KNOWN_FACES", "1") not in (
     "0", "false", "False", "no", "",
@@ -340,6 +340,7 @@ async def detect(
     """Receive a frame, identify the person, broadcast on cooldown miss."""
 
     image_bytes = await _extract_image_bytes(request, image)
+    manager: ConnectionManager = app.state.connections
 
     known: KnownFaces = app.state.known_faces
     # Recognition is CPU-bound (dlib). Offload so the event loop stays
@@ -352,21 +353,28 @@ async def detect(
         model=FACE_DETECT_MODEL,
     )
     if match is None:
+        print("no face")
         return JSONResponse({"status": "no_face", "person": None})
+
+    if match is not None and match["matched"] == False:
+        await manager.broadcast({"type": "PERSON_DETECTED", "payload": {"id":"123", "name": "Unknown", "email": "unknown", "image": "unknown", "metrics": None}, "employee_found": False, "data_found": False})
+        return JSONResponse({"status": "no_match", "person": None})
 
     metrics: Optional[Metrics] = await asyncio.to_thread(
         fetch_daily_metrics, match["email"]
     )
-    if metrics is None:
-        # No CSV row for this email — do not broadcast or expose person data.
-        return JSONResponse({"status": "metrics_not_found", "person": None})
-
     payload: DetectionPayload = {
         "name": match["name"],
         "email": match["email"],
         "image": match["image_filename"],
         "metrics": metrics,
     }
+    if metrics is None:
+        print("metrics not found")
+        await manager.broadcast({"type": "PERSON_DETECTED", "payload": payload, "employee_found": True, "data_found": False})
+        # No CSV row for this email — do not broadcast or expose person data.
+        return JSONResponse({"status": "metrics_not_found", "person": None})
+
 
     cooldown: Cooldown = app.state.cooldown
     if not await cooldown.should_broadcast(payload["email"]):
@@ -378,8 +386,7 @@ async def detect(
         )
         return JSONResponse({"status": "cooldown", "person": payload})
 
-    manager: ConnectionManager = app.state.connections
-    await manager.broadcast({"type": "PERSON_DETECTED", "payload": payload})
+    await manager.broadcast({"type": "PERSON_DETECTED", "payload": payload, "data": True})
     logger.info(
         "detected email=%s name=%s confidence=%.3f active_days=%s",
         payload["email"],
