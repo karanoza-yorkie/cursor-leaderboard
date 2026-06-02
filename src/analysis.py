@@ -166,9 +166,6 @@ def run_analysis():
     final_df["quality_norm"] = (final_df["quality_norm"] * 100).round(2)
     final_df["final_score"] = (final_df["final_score"] * 100).round(2)
 
-    all_users = final_df.sort_values("final_score", ascending=False)
-    ALL_USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    all_users.to_csv(ALL_USERS_FILE, index=False)
 
     MIN_AI_LINES = final_df["Total_AI_Lines"].quantile(0.50)   # dynamic
     MIN_COST = 10
@@ -179,6 +176,10 @@ def run_analysis():
         (final_df["Total_Cost"] >= MIN_COST) &
         (final_df["Total_Prompts"] >= MIN_PROMPTS)
     ]
+
+    all_users = eligible_users.sort_values("final_score", ascending=False)
+    ALL_USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    all_users.to_csv(ALL_USERS_FILE, index=False)
 
     top_10 = eligible_users.sort_values("final_score", ascending=False).head(10)
 
