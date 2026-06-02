@@ -128,7 +128,7 @@ def build_card(row):
     <!-- Header bar -->
     <div class="card-header">
       <div class="brand">
-    <img src="York-logo-.png" class="brand-logo" />
+    <img src="/output/latest/York-logo-.png" class="brand-logo" />
     <span class="brand-name">Cursor Usage</span>
     </div>
       <div class="badge-weekly">
@@ -303,8 +303,9 @@ def build_html(rows):
     font-family: 'Bebas Neue', sans-serif;
     font-size: 4.5rem; color: var(--rank-color, var(--green));
     line-height: 1;
+    z-index: 999;
   }}
-  .rank-num sup {{ font-size: 1.8rem; vertical-align: super; }}
+  .rank-num sup {{ font-size: 1.8rem; vertical-align: super; z-index: 999; }}
   .avatar-ring {{
     position: absolute; bottom: 0; left: 30px;
     width: 140px; height: 140px;
@@ -483,6 +484,358 @@ def build_html(rows):
   updateDots(0);
   startProgress();
 }})();
+</script>
+<script>
+(function () {{
+  var HOLD_MS = 10000;
+  var EXIT_MS = 700;
+  var QUEUE_CAP = 10;
+  var RECONNECT_INITIAL_MS = 1000;
+  var RECONNECT_MAX_MS = 30000;
+  var LIVE_RANK_COLOR = '#64748b';
+  var DEBUG_LIVE = false;
+  try {{
+    DEBUG_LIVE = new URLSearchParams(window.location.search).has('live_debug');
+  }} catch (_) {{}}
+
+  function liveLog() {{
+    if (!DEBUG_LIVE) return;
+    var args = ['[live]'].concat(Array.prototype.slice.call(arguments));
+    console.log.apply(console, args);
+  }}
+
+  function resolveWsUrl() {{
+    try {{
+      var q = new URLSearchParams(window.location.search).get('ws');
+      if (q) return q;
+    }} catch (_) {{ /* URLSearchParams missing on ancient TVs; fall through */ }}
+    if (window.LEADERBOARD_WS_URL) return window.LEADERBOARD_WS_URL;
+    return 'wss://cursor-leaderboard.yorkdevs.link/ws';
+  }}
+
+  var activeIds = new Set();
+  var queue = [];
+  var currentLive = null;
+  var ws = null;
+  var wsUrl = '';
+  var backoff = RECONNECT_INITIAL_MS;
+  var reconnectTimer = null;
+  var slideshow = null;
+  var slidePrototype = null;
+
+  function getSlidePrototype() {{
+    if (!slideshow) {{
+      slideshow = document.getElementById('slideshow');
+    }}
+    if (!slidePrototype && slideshow) {{
+      slidePrototype = slideshow.querySelector('.slide[data-rank]');
+      if (!slidePrototype && DEBUG_LIVE) {{
+        console.warn('[live] no .slide[data-rank] prototype found in #slideshow');
+      }}
+    }}
+    return slidePrototype;
+  }}
+
+  function personId(person) {{
+    if (person.id) return String(person.id);
+    if (person.email) return String(person.email);
+    if (person.face_id) return 'unknown:' + person.face_id;
+    return '';
+  }}
+
+  function isQueued(id) {{
+    for (var i = 0; i < queue.length; i++) {{
+      if (queue[i].id === id) return true;
+    }}
+    return false;
+  }}
+
+  function resolveAvatarUrl(person) {{
+    if (person.detected_image) return person.detected_image;
+    if (!person.image) return '';
+    if (String(person.image).indexOf('data:') === 0) return person.image;
+    return faceImageUrl(person.image);
+  }}
+
+  function faceImageUrl(imageFilename) {{
+    if (!imageFilename || !wsUrl) return '';
+    if (String(imageFilename).indexOf('data:') === 0) return imageFilename;
+    try {{
+      var u = new URL(wsUrl);
+      u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+      u.pathname = '/faces/' + encodeURIComponent(imageFilename);
+      u.search = '';
+      u.hash = '';
+      return u.href;
+    }} catch (_) {{
+      return '';
+    }}
+  }}
+
+  function formatMetric(value) {{
+    if (value == null || value === '-') return '-';
+    if (typeof value === 'number' && !isNaN(value)) {{
+      if (Number.isInteger(value)) return value.toLocaleString();
+      return value.toFixed(2);
+    }}
+    return String(value);
+  }}
+
+  function setColMetric(statCol, itemIndex, value) {{
+    if (!statCol) return;
+    var strongs = statCol.querySelectorAll('.stat-item strong');
+    if (strongs[itemIndex]) strongs[itemIndex].textContent = formatMetric(value);
+  }}
+
+  function showAvatarPlaceholder(ring, person) {{
+    var img = ring.querySelector('.avatar-img');
+    var letter = ((person.name || person.email || '?').charAt(0) || '?').toUpperCase();
+    var ph = document.createElement('div');
+    ph.className = 'avatar-placeholder';
+    ph.textContent = letter;
+    if (img) {{
+      img.replaceWith(ph);
+    }} else {{
+      ring.appendChild(ph);
+    }}
+  }}
+
+  function showFallbackMetrics(slide, message) {{
+    var sideLabels = slide.querySelectorAll('.stat-side-label');
+    for (var i = 0; i < sideLabels.length; i++) {{
+      sideLabels[i].textContent = '';
+    }}
+    var cols = slide.querySelectorAll('.stat-col');
+    for (var c = 0; c < cols.length; c++) {{
+      var strongs = cols[c].querySelectorAll('.stat-item strong');
+      for (var s = 0; s < strongs.length; s++) {{
+        strongs[s].textContent = '';
+      }}
+    }}
+    var activeDays = slide.querySelector('.active-days');
+    if (activeDays) activeDays.textContent = '\u00a0';
+    var finalBar = slide.querySelector('.final-score-bar');
+    if (finalBar) finalBar.textContent = message;
+    var finalNote = slide.querySelector('.final-note');
+    if (finalNote) finalNote.style.display = 'none';
+  }}
+
+  function fillLiveMetrics(slide, m) {{
+    var cols = slide.querySelectorAll('.stat-col');
+    setColMetric(cols[0], 0, m.totalAiLines);
+    setColMetric(cols[0], 1, m.usageScore != null ? m.usageScore : '-');
+    setColMetric(cols[1], 0, m.promptCount);
+    setColMetric(cols[1], 1, m.avgScore);
+
+    var activeStrong = slide.querySelector('.active-days strong');
+    if (activeStrong) activeStrong.textContent = formatMetric(m.activeDays);
+
+    var finalBar = slide.querySelector('.final-score-bar');
+    if (finalBar) {{
+      finalBar.innerHTML = 'Final score: <strong>' + formatMetric(
+        m.finalScore != null ? m.finalScore : '-'
+      ) + '</strong>';
+    }}
+    var finalNote = slide.querySelector('.final-note');
+    if (finalNote) finalNote.style.display = '';
+  }}
+
+  function ordinalParts(num) {{
+    if (num % 100 >= 11 && num % 100 <= 13) {{
+      return {{ number: num, suffix: 'th' }};
+    }}
+
+    switch (num % 10) {{  
+      case 1: return {{ number: num, suffix: 'st' }};
+      case 2: return {{ number: num, suffix: 'nd' }};
+      case 3: return {{ number: num, suffix: 'rd' }};
+      default: return {{ number: num, suffix: 'th' }};
+    }}
+  }}
+
+  function fillLiveSlide(slide, person) {{
+    console.log(person);
+    var employeeFound = person.employee_found !== false;
+    var dataFound = person.data_found !== false;
+    if (person.employee_found === undefined && person.data_found === undefined) {{
+      employeeFound = true;
+      dataFound = !!(person.metrics && person.metrics.rank != null);
+    }}
+
+    var rankCircle = slide.querySelector('.rank-circle');
+    if (rankCircle) rankCircle.style.setProperty('--rank-color', LIVE_RANK_COLOR);
+
+    var rankNum = slide.querySelector('.rank-num');
+    if (rankNum) {{ 
+      if (employeeFound && dataFound && person.metrics && person.metrics.rank != null) {{
+        var parts = ordinalParts(person.metrics.rank);
+        rankNum.innerHTML = parts.number + '<sup>' + parts.suffix + '</sup>';
+      }} else {{
+        rankNum.textContent = '\u2014';
+      }}
+    }}
+
+    var ring = slide.querySelector('.avatar-ring');
+    if (ring) ring.style.borderColor = LIVE_RANK_COLOR;
+
+    var img = slide.querySelector('.avatar-img');
+    var avatarUrl = resolveAvatarUrl(person);
+    if (img && avatarUrl) {{
+      img.src = avatarUrl;
+      img.alt = employeeFound ? (person.name || '') : 'Unknown person';
+      img.onerror = function () {{ showAvatarPlaceholder(ring, person); }};
+    }} else if (ring) {{
+      showAvatarPlaceholder(ring, person);
+    }}
+
+    var nameEl = slide.querySelector('.person-name');
+    if (nameEl) {{
+      if (!employeeFound) {{
+        nameEl.textContent = 'USER NOT FOUND';
+      }} else {{
+        nameEl.textContent = (person.name || '').toUpperCase();
+      }}
+    }}
+
+    var titleEl = slide.querySelector('.person-title');
+    if (titleEl) {{
+      titleEl.textContent = employeeFound ? (person.email || '') : '';
+    }}
+
+    if (employeeFound && dataFound) {{  
+      console.log("filling metrics", person.metrics);
+      fillLiveMetrics(slide, person.metrics || {{}});
+    }} else if (!employeeFound) {{
+      console.log("filling fallback metrics", 'User not found');
+      showFallbackMetrics(slide, 'User not found');
+    }} else {{
+      console.log("filling fallback metrics", 'Data not found');
+      showFallbackMetrics(slide, 'Data not found');
+    }}
+  }}
+
+  function buildLiveSlide(person) {{
+    var proto = getSlidePrototype();
+    if (!proto) {{ return null; }};
+    var slide = proto.cloneNode(true);
+    slide.classList.remove('active', 'exit');
+    slide.removeAttribute('data-rank');
+    slide.setAttribute('data-live-id', person.id);
+    var dots = slide.querySelector('.dots-row');
+    if (dots) {{
+      dots.innerHTML = '';
+      dots.removeAttribute('id');
+    }}
+    fillLiveSlide(slide, person);
+    return slide;
+  }}
+
+  function showNext() {{
+    if (currentLive || queue.length === 0) {{ return; }};
+    if (!slideshow) {{
+      slideshow = document.getElementById('slideshow');
+      if (!slideshow) return;
+    }}
+    while (queue.length > 0) {{
+      var person = queue.shift();
+      var el = buildLiveSlide(person);
+      if (!el) {{
+        console.warn('[live] buildLiveSlide failed for', person.id);
+        liveLog('build failed, trying next in queue');
+        continue;
+      }}
+      slideshow.appendChild(el);
+      void el.offsetWidth;
+      el.classList.add('active');
+      activeIds.add(person.id);
+      liveLog('slide shown', person.id, el);
+      var hideTimer = setTimeout(function () {{
+        el.classList.remove('active');
+        el.classList.add('exit');
+      }}, HOLD_MS);
+      var removeTimer = setTimeout(function () {{
+        if (el.parentNode) el.parentNode.removeChild(el);
+        activeIds.delete(person.id);
+        currentLive = null;
+        liveLog('slide removed', person.id);
+        showNext();
+      }}, HOLD_MS + EXIT_MS);
+      currentLive = {{ id: person.id, el: el, hideTimer: hideTimer, removeTimer: removeTimer }};
+      return;
+    }}
+  }}
+
+  function onMessage(raw) {{
+    var msg;
+    try {{ msg = JSON.parse(raw); }} catch (_) {{ return; }};
+    if (!msg || msg.type !== 'PERSON_DETECTED') return;
+    var p = msg.payload;
+    if (!p) return;
+
+    var person = {{
+      id: '',
+      email: p.email != null ? String(p.email) : '',
+      name: p.name != null ? String(p.name) : '',
+      image: p.image != null ? String(p.image) : '',
+      detected_image: p.detected_image != null ? String(p.detected_image) : '',
+      face_id: p.face_id != null ? String(p.face_id) : '',
+      employee_found: p.employee_found,
+      data_found: p.data_found,
+      metrics: p.metrics && typeof p.metrics === 'object' ? p.metrics : {{}}
+    }};
+    person.id = personId(person);
+    if (!person.id) {{ return; }};
+
+    liveLog('PERSON_DETECTED', person.id);
+    if (activeIds.has(person.id)) return;
+    if (isQueued(person.id)) return;
+    if (queue.length >= QUEUE_CAP) return;
+    queue.push(person);
+    showNext();
+  }}
+
+  function scheduleReconnect() {{
+    if (reconnectTimer) return;
+    var delay = backoff;
+    reconnectTimer = setTimeout(function () {{
+      reconnectTimer = null;
+      backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
+      connect();
+    }}, delay);
+  }}
+
+  function connect() {{
+    var url = resolveWsUrl();
+    wsUrl = url;
+    try {{
+      ws = new WebSocket(url);
+    }} catch (_) {{
+      scheduleReconnect();
+      return;
+    }}
+    ws.onopen = function () {{
+      backoff = RECONNECT_INITIAL_MS;
+    }};
+    ws.onmessage = function (ev) {{ onMessage(ev.data); }};
+    ws.onclose = function () {{ scheduleReconnect(); }};
+    ws.onerror = function () {{
+      try {{ ws.close(); }} catch (_) {{}}
+    }};
+  }}
+
+  function boot() {{
+    slideshow = document.getElementById('slideshow');
+    getSlidePrototype();
+    connect();
+  }}
+
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', boot, {{ once: true }});
+  }} else {{
+    boot();
+  }}
+}})();
+
 </script>
 </body>
 </html>

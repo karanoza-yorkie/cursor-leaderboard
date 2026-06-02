@@ -58,11 +58,12 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 import mimetypes
 
-# 🔧 Configurable settings
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 BASE_DIRS = [
-    Path(".").resolve(),                       # project root
-    Path("./output").resolve(),                # generated files
-    Path("./assets").resolve(),                # static assets
+    REPO_ROOT,
+    REPO_ROOT / "output",
+    REPO_ROOT / "assets",
 ]
 
 # ─── Configuration ───────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ ALLOWED_ORIGINS: list[str] = [
 # trustworthy origin for camera permission + API calls.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PHONE_HTML_PATH = REPO_ROOT / "frontend" / "phone.html"
+
 
 # Real face-recognition config. Encodings are loaded once in the
 # lifespan; the route only reads from the cache.
