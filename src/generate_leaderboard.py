@@ -110,7 +110,8 @@ def build_card(row):
     active_days = row.get("Active_Days", "—")
     final_score = float(row.get("final_score", 0))
     email = row.get("Email", "").strip().lower()
-    photo_url = fetch_photo_url(email)
+    photo_url = f"/faces/{name.lower().replace(" ","-")}_{email.lower()}.png"
+    # photo_url = fetch_photo_url(email)
 
     photo_html = (
         f'<img src="{photo_url}" alt="{name}" class="avatar-img" />'

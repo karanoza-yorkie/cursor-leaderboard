@@ -177,11 +177,19 @@ def run_analysis():
         (final_df["Total_Prompts"] >= MIN_PROMPTS)
     ]
 
-    all_users = eligible_users.sort_values("final_score", ascending=False)
+    # keep eligible users
+    eligible = eligible_users.copy().sort_values("final_score", ascending=False)
+
+    # remove already included users from final_df
+    remaining = final_df[~final_df['email'].isin(eligible_users['email'])].sort_values("final_score", ascending=False)
+
+    # combine
+    all_users = pd.concat([eligible, remaining], ignore_index=True)
+
     ALL_USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     all_users.to_csv(ALL_USERS_FILE, index=False)
 
-    top_10 = eligible_users.sort_values("final_score", ascending=False).head(10)
+    top_10 = eligible.head(10)
 
     # ============================================================
     # STEP 5: SAVE OUTPUT
