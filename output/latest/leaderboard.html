@@ -220,8 +220,8 @@
 
     <!-- Header bar -->
     <div class="card-header">
-      <div class="brand">
-    <img src="York-logo-.png" class="brand-logo" />
+      <div class="brand"> 
+    <img src="/output/latest/York-logo-.png" class="brand-logo" />
     <span class="brand-name">Cursor Usage</span>
     </div>
       <div class="badge-weekly">
@@ -997,7 +997,7 @@
       if (q) return q;
     } catch (_) { /* URLSearchParams missing on ancient TVs; fall through */ }
     if (window.LEADERBOARD_WS_URL) return window.LEADERBOARD_WS_URL;
-    return 'ws://localhost:8000/ws';
+    return 'wss://cursor-leaderboard.yorkdevs.link/ws';
   }
 
   var activeIds = new Set();

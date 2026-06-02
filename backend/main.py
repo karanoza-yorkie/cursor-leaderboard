@@ -50,8 +50,20 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-
+import mimetypes
 from recognition import KnownFaces, MatchResult, load_known_faces, recognize_face
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from pathlib import Path
+import mimetypes
+
+# 🔧 Configurable settings
+BASE_DIRS = [
+    Path(".").resolve(),                       # project root
+    Path("./output").resolve(),                # generated files
+    Path("./assets").resolve(),                # static assets
+]
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -331,6 +343,57 @@ async def serve_face(filename: str) -> FileResponse:
     media = "image/jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
     return FileResponse(path, media_type=media, headers={"Cache-Control": "public, max-age=3600"})
 
+
+DEFAULT_ALLOWED_EXTENSIONS = {
+    ".html", ".css", ".js",
+    ".jpg", ".jpeg", ".png", ".webp",
+    ".svg", ".gif",
+    ".mp4"
+}
+
+@app.get("/{file_path:path}")
+async def serve_file(
+    file_path: str,
+    cache: bool = Query(True, description="Enable browser cache"),
+):
+    """
+    Dynamically serve any file from allowed directories.
+    """
+
+    requested_path = Path(file_path)
+
+    # 🔍 Find file in allowed base directories
+    resolved_file = None
+    for base_dir in BASE_DIRS:
+        candidate = (base_dir / requested_path).resolve()
+        if candidate.exists() and candidate.is_file():
+            resolved_file = candidate
+            break
+
+    if not resolved_file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # 🔐 Security: ensure file is inside allowed dirs
+    if not any(str(resolved_file).startswith(str(base)) for base in BASE_DIRS):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 📎 Extension check
+    if resolved_file.suffix.lower() not in DEFAULT_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=403, detail="File type not allowed")
+
+    # 🧠 MIME type
+    mime_type, _ = mimetypes.guess_type(resolved_file)
+    mime_type = mime_type or "application/octet-stream"
+
+    headers = {
+        "Cache-Control": "public, max-age=3600" if cache else "no-cache, no-store"
+    }
+
+    return FileResponse(
+        resolved_file,
+        media_type=mime_type,
+        headers=headers
+    )
 
 @app.post("/detect")
 async def detect(
