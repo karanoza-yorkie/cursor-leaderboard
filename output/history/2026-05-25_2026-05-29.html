@@ -208,6 +208,64 @@
     width: 0%; transition: width linear;
     z-index: 99;
   }
+
+  /* ── Live detection queue preview ── */
+  .queue-preview {
+    position: fixed; bottom: 44px; right: 20px;
+    z-index: 100;
+    max-width: min(280px, 42vw);
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.92);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    pointer-events: none;
+  }
+  .queue-preview-label {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 6px;
+  }
+  .queue-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .queue-preview-avatar-wrap {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .queue-preview-avatar {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .queue-preview-avatar-fallback {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--green);
+  }
+  .queue-preview-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 </style>
 </head>
 <body>
@@ -896,7 +954,17 @@
 </div>
 
 <div class="progress-bar" id="progressBar"></div>
-<div class="timestamp">Generated: 2026-06-03 21:42 · Auto-refreshes every 5 min</div>
+<div id="queuePreview" class="queue-preview" hidden aria-hidden="true">
+  <span class="queue-preview-label">Up next</span>
+  <div class="queue-preview-row">
+    <div class="queue-preview-avatar-wrap">
+      <img class="queue-preview-avatar" alt="" />
+      <span class="queue-preview-avatar-fallback" hidden></span>
+    </div>
+    <span class="queue-preview-name"></span>
+  </div>
+</div>
+<div class="timestamp">Generated: 2026-06-03 21:51 · Auto-refreshes every 5 min</div>
 
 <script>
 (function() {
@@ -1003,6 +1071,74 @@
   var reconnectTimer = null;
   var slideshow = null;
   var slidePrototype = null;
+  var queuePreviewEl = null;
+  var previewAvatarEl = null;
+  var previewAvatarFallbackEl = null;
+  var previewNameEl = null;
+
+  function getQueuePreviewElements() {
+    if (!queuePreviewEl) {
+      queuePreviewEl = document.getElementById('queuePreview');
+      if (queuePreviewEl) {
+        previewAvatarEl = queuePreviewEl.querySelector('.queue-preview-avatar');
+        previewAvatarFallbackEl = queuePreviewEl.querySelector('.queue-preview-avatar-fallback');
+        previewNameEl = queuePreviewEl.querySelector('.queue-preview-name');
+      }
+    }
+    return queuePreviewEl;
+  }
+
+  function previewDisplayName(person) {
+    if (isUnknownPerson(person) || person.employee_found === false) {
+      return 'USER NOT FOUND';
+    }
+    return (person.name || person.email || '').toUpperCase();
+  }
+
+  function fillPreviewAvatar(person) {
+    if (!previewAvatarEl || !previewAvatarFallbackEl) return;
+    var letter = ((person.name || person.email || '?').charAt(0) || '?').toUpperCase();
+    previewAvatarFallbackEl.textContent = letter;
+    previewAvatarFallbackEl.hidden = true;
+    previewAvatarEl.hidden = false;
+    previewAvatarEl.alt = previewDisplayName(person);
+    var avatarUrl = resolveAvatarUrl(person);
+    if (!avatarUrl) {
+      previewAvatarEl.hidden = true;
+      previewAvatarFallbackEl.hidden = false;
+      return;
+    }
+    previewAvatarEl.onload = function () {
+      previewAvatarEl.hidden = false;
+      previewAvatarFallbackEl.hidden = true;
+    };
+    previewAvatarEl.onerror = function () {
+      previewAvatarEl.hidden = true;
+      previewAvatarFallbackEl.hidden = false;
+    };
+    previewAvatarEl.src = avatarUrl;
+  }
+
+  function updateQueuePreview() {
+    if (!getQueuePreviewElements()) return;
+    if (queue.length === 0) {
+      queuePreviewEl.hidden = true;
+      queuePreviewEl.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    var next = queue[0];
+    if (previewNameEl) {
+      var nameText = previewDisplayName(next);
+      if (queue.length > 1) {
+        nameText += ' (+' + (queue.length - 1) + ' waiting)';
+      }
+      previewNameEl.textContent = nameText;
+    }
+    fillPreviewAvatar(next);
+    queuePreviewEl.hidden = false;
+    queuePreviewEl.setAttribute('aria-hidden', 'false');
+    liveLog('queue preview', next.id, queue.length);
+  }
 
   function getSlidePrototype() {
     if (!slideshow) {
@@ -1221,7 +1357,10 @@
   }
 
   function showNext() {
-    if (currentLive || queue.length === 0) { return; };
+    if (currentLive || queue.length === 0) {
+      if (queue.length === 0) updateQueuePreview();
+      return;
+    };
     if (!slideshow) {
       slideshow = document.getElementById('slideshow');
       if (!slideshow) return;
@@ -1252,8 +1391,10 @@
         showNext();
       }, holdMs + EXIT_MS);
       currentLive = { id: person.id, el: el, hideTimer: hideTimer, removeTimer: removeTimer };
+      updateQueuePreview();
       return;
     }
+    updateQueuePreview();
   }
 
   function onMessage(raw) {
@@ -1283,6 +1424,7 @@
     if (queue.length >= QUEUE_CAP) return;
     queue.push(person);
     showNext();
+    updateQueuePreview();
   }
 
   function scheduleReconnect() {
@@ -1317,6 +1459,8 @@
   function boot() {
     slideshow = document.getElementById('slideshow');
     getSlidePrototype();
+    getQueuePreviewElements();
+    updateQueuePreview();
     connect();
   }
 
