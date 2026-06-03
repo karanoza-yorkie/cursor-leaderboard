@@ -489,6 +489,7 @@ def build_html(rows):
 <script>
 (function () {{
   var HOLD_MS = 10000;
+  var HOLD_MS_UNKNOWN = 3000;
   var EXIT_MS = 700;
   var QUEUE_CAP = 10;
   var RECONNECT_INITIAL_MS = 1000;
@@ -549,6 +550,15 @@ def build_html(rows):
       if (queue[i].id === id) return true;
     }}
     return false;
+  }}
+
+  function isUnknownPerson(person) {{
+    if (person.employee_found === false) return true;
+    return person.email === 'unknown';
+  }}
+
+  function holdMsFor(person) {{
+    return isUnknownPerson(person) ? HOLD_MS_UNKNOWN : HOLD_MS;
   }}
 
   function resolveAvatarUrl(person) {{
@@ -750,17 +760,18 @@ def build_html(rows):
       el.classList.add('active');
       activeIds.add(person.id);
       liveLog('slide shown', person.id, el);
+      var holdMs = holdMsFor(person);
       var hideTimer = setTimeout(function () {{
         el.classList.remove('active');
         el.classList.add('exit');
-      }}, HOLD_MS);
+      }}, holdMs);
       var removeTimer = setTimeout(function () {{
         if (el.parentNode) el.parentNode.removeChild(el);
         activeIds.delete(person.id);
         currentLive = null;
         liveLog('slide removed', person.id);
         showNext();
-      }}, HOLD_MS + EXIT_MS);
+      }}, holdMs + EXIT_MS);
       currentLive = {{ id: person.id, el: el, hideTimer: hideTimer, removeTimer: removeTimer }};
       return;
     }}
@@ -780,8 +791,8 @@ def build_html(rows):
       image: p.image != null ? String(p.image) : '',
       detected_image: p.detected_image != null ? String(p.detected_image) : '',
       face_id: p.face_id != null ? String(p.face_id) : '',
-      employee_found: p.employee_found,
-      data_found: p.data_found,
+      employee_found: p.employee_found !== undefined ? p.employee_found : msg.employee_found,
+      data_found: p.data_found !== undefined ? p.data_found : msg.data_found,
       metrics: p.metrics && typeof p.metrics === 'object' ? p.metrics : {{}}
     }};
     person.id = personId(person);
