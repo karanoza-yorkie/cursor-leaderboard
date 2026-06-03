@@ -10,8 +10,8 @@
    * Phone capture page.
    *
    * Camera auto-starts on load (no buttons per spec). A hidden <canvas>
-   * grabs JPEG frames from the live <video>; frames are POSTed to
-   * /detect on the same origin (the FastAPI backend also serves this
+   * grabs JPEG frames from the live <video>; after a dwell gate, frames are
+   * POSTed to /detect on the same origin (the FastAPI backend also serves this
    * page, so window.location.origin = backend URL).
    *
    * Cross-browser camera handling is isolated in the `Camera` IIFE at
@@ -480,10 +480,14 @@ var Camera = (function () {
   "use strict";
 
   /* ── Config ──────────────────────────────────────────────────────── */
-  var DETECT_URL  = window.location.origin + "/detect";
-  var CAPTURE_MS  = 1500;
-  var JPEG_QUALITY = 0.7;
-  var MAX_EDGE_PX = 640;
+  var DETECT_URL       = window.location.origin + "/detect";
+  var FACE_DWELL_MS    = 3000;
+  var SEND_INTERVAL_MS = 3000;
+  var PREVIEW_MS       = 250;
+  var FACE_LOST_MS     = 600;
+  var CAMERA_WARMUP_MS = 3000;
+  var JPEG_QUALITY     = 0.7;
+  var MAX_EDGE_PX      = 640;
 
   /* ── DOM ─────────────────────────────────────────────────────────── */
   var videoEl       = document.getElementById("video");
@@ -500,7 +504,12 @@ var Camera = (function () {
   var inFlight = false;
   var lastSendAt = 0;
   var detectedHideTimer = null;
-  var captureTimer = null;
+  var previewTimer = null;
+  var faceDetector = null;
+  var faceFirstSeenAt = null;
+  var lastFaceSeenAt = 0;
+  var cameraReadyAt = 0;
+  var useTimedFallback = false;
 
   /* ── UI helpers ──────────────────────────────────────────────────── */
   function setStatus(kind, text) {
@@ -525,7 +534,7 @@ var Camera = (function () {
     errorBodyEl.innerHTML = msg.body;
     errorEl.classList.add("is-visible");
     setStatus("err", shortStatusFor(code));
-    stopCaptureLoop();
+    stopPreviewLoop();
   }
 
   function shortStatusFor(code) {
@@ -555,7 +564,29 @@ var Camera = (function () {
     tapEl.addEventListener("touchend", handler, { once: true });
   }
 
-  /* ── Frame capture ───────────────────────────────────────────────── */
+  /* ── Local face detection ────────────────────────────────────────── */
+  function initFaceDetector() {
+    if ("FaceDetector" in window) {
+      try {
+        faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      } catch (e) {
+        faceDetector = null;
+      }
+    }
+    useTimedFallback = !faceDetector;
+  }
+
+  async function isFacePresent() {
+    if (!faceDetector) return false;
+    try {
+      var faces = await faceDetector.detect(videoEl);
+      return !!(faces && faces.length > 0);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /* ── Frame capture & send ────────────────────────────────────────── */
   function grabFrameBlob() {
     return new Promise(function (resolve) {
       var vw = videoEl.videoWidth, vh = videoEl.videoHeight;
@@ -585,17 +616,9 @@ var Camera = (function () {
     });
   }
 
-  async function captureAndSend() {
-    if (inFlight) return;
-
-    var now = Date.now();
-    if (now - lastSendAt < CAPTURE_MS - 50) return;
-
-    var blob = await grabFrameBlob();
-    if (!blob) return;
-
+  async function postFrame(blob) {
     inFlight = true;
-    lastSendAt = now;
+    lastSendAt = Date.now();
     setStatus("sending", "Sending…");
 
     var fd = new FormData();
@@ -613,12 +636,12 @@ var Camera = (function () {
       var status = data && data.status;
       var person = data && data.person;
 
-      if (status === "face_detected" && person && person.id) {
+      if (status === "face_detected" && person && person.email) {
         showDetected(person);
         setStatus("hit", "Detected " + person.name);
       } else if (status === "cooldown") {
         setStatus("cool", "Cooldown");
-      } else {
+      } else if (!useTimedFallback) {
         setStatus("idle", "Watching…");
       }
     } catch (err) {
@@ -628,17 +651,83 @@ var Camera = (function () {
     }
   }
 
-  function startCaptureLoop() {
-    if (captureTimer) return;
-    setStatus("idle", "Watching…");
-    captureTimer = setInterval(captureAndSend, CAPTURE_MS);
+  async function maybeSendLatestFrame() {
+    if (inFlight) return;
+
+    var now = Date.now();
+    if (now - lastSendAt < SEND_INTERVAL_MS - 50) return;
+
+    var blob = await grabFrameBlob();
+    if (!blob) return;
+
+    await postFrame(blob);
   }
 
-  function stopCaptureLoop() {
-    if (captureTimer) {
-      clearInterval(captureTimer);
-      captureTimer = null;
+  async function previewTick() {
+    var now = Date.now();
+
+    if (useTimedFallback) {
+      if (now - cameraReadyAt < CAMERA_WARMUP_MS) {
+        setStatus("idle", "Starting…");
+        return;
+      }
+      setStatus("idle", "Watching…");
+      await maybeSendLatestFrame();
+      return;
     }
+
+    var facePresent = await isFacePresent();
+
+    if (!facePresent) {
+      if (faceFirstSeenAt && now - lastFaceSeenAt > FACE_LOST_MS) {
+        faceFirstSeenAt = null;
+      }
+      if (!inFlight) {
+        setStatus("idle", "Watching…");
+      }
+      return;
+    }
+
+    lastFaceSeenAt = now;
+    if (!faceFirstSeenAt) {
+      faceFirstSeenAt = now;
+    }
+
+    if (now - faceFirstSeenAt < FACE_DWELL_MS) {
+      if (!inFlight) {
+        setStatus("idle", "Hold still…");
+      }
+      return;
+    }
+
+    if (!inFlight) {
+      setStatus("idle", "Watching…");
+    }
+    await maybeSendLatestFrame();
+  }
+
+  function resetPresenceState() {
+    faceFirstSeenAt = null;
+    lastFaceSeenAt = 0;
+  }
+
+  function startPreviewLoop() {
+    if (previewTimer) return;
+    initFaceDetector();
+    resetPresenceState();
+    cameraReadyAt = Date.now();
+    setStatus("idle", useTimedFallback ? "Starting…" : "Watching…");
+    previewTimer = setInterval(function () {
+      previewTick();
+    }, PREVIEW_MS);
+  }
+
+  function stopPreviewLoop() {
+    if (previewTimer) {
+      clearInterval(previewTimer);
+      previewTimer = null;
+    }
+    resetPresenceState();
   }
 
   /* ── Boot ────────────────────────────────────────────────────────── */
@@ -657,7 +746,7 @@ var Camera = (function () {
 
     if (result.ok) {
       applyFacingMode(result.facingMode);
-      startCaptureLoop();
+      startPreviewLoop();
       wireVisibilityPause();
       return;
     }
@@ -673,7 +762,7 @@ var Camera = (function () {
           renderError(Camera.Codes.UNKNOWN);
           return;
         }
-        startCaptureLoop();
+        startPreviewLoop();
         wireVisibilityPause();
       });
       return;
@@ -685,9 +774,9 @@ var Camera = (function () {
   function wireVisibilityPause() {
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        stopCaptureLoop();
-      } else if (!captureTimer && !errorEl.classList.contains("is-visible")) {
-        startCaptureLoop();
+        stopPreviewLoop();
+      } else if (!previewTimer && !errorEl.classList.contains("is-visible")) {
+        startPreviewLoop();
       }
     });
   }
