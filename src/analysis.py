@@ -173,7 +173,7 @@ def run_analysis():
 
     eligible_users = final_df[
         (final_df["Total_AI_Lines"] >= MIN_AI_LINES) &
-        (final_df["Total_Cost"] >= MIN_COST) &
+        # (final_df["Total_Cost"] >= MIN_COST) &
         (final_df["Total_Prompts"] >= MIN_PROMPTS)
     ]
 
