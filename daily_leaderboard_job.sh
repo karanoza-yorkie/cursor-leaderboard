@@ -43,8 +43,9 @@ set +a
 # Activate virtual environment and install dependencies
 "$PYTHON_BIN" -m venv venv
 source venv/bin/activate
-playwright install chromium
 pip install -r requirements.txt
+pip install -r backend/requirements.txt
+playwright install chromium
 
 log "START daily leaderboard job (last 7 days)"
 
