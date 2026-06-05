@@ -1,6 +1,8 @@
 # Face Detection Backend
 
-FastAPI service for the realtime face-detection → TV display layer. See [`docs/face-detection.md`](../docs/face-detection.md) for the full design.
+FastAPI service for the realtime face-detection → TV display layer.
+
+**Documentation:** [docs/architecture.md](../docs/architecture.md) · [docs/api-reference.md](../docs/api-reference.md) · [docs/face-detection.md](../docs/face-detection.md)
 
 ## Prerequisites
 
@@ -48,7 +50,7 @@ Live detection metrics are read from `data/processed/{week}/all_users.csv` (see 
 | `FACE_DETECT_MODEL`    | `hog`                    | dlib face detector: `hog` (CPU) or `cnn` (GPU build).                                    |
 | `REQUIRE_KNOWN_FACES`  | `1`                      | If truthy, refuse to start with an empty roster. Set `0` for dev / CI without faces.     |
 | `ALL_USERS_CSV`        | `data/processed/{week}/all_users.csv` | Precomputed metrics for live `/detect` (CSV lookup by email). |
-| `BACKEND_WS_URL`       | `ws://localhost:8000/ws` | Read by `src/generate_leaderboard.py` only (build-time).                                 |
+| `LEADERBOARD_WS_URL`   | _(TV runtime)_           | Set on TV via `?ws=` query param or `window.LEADERBOARD_WS_URL` in generated HTML. |
 
 ## LAN testing with a real phone
 
@@ -75,7 +77,7 @@ Live detection metrics are read from `data/processed/{week}/all_users.csv` (see 
 
   Trust the mkcert root on the phone (iOS: install + enable in Settings → General → About → Certificate Trust Settings).
 
-If you switch the backend to HTTPS, also rebuild the leaderboard with `BACKEND_WS_URL=wss://<host>/ws` so the TV connects over `wss://`.
+If you switch the backend to HTTPS, pass `?ws=wss://<host>/ws` on the TV leaderboard URL so the browser connects over secure WebSocket.
 
 ### Browser compatibility
 
@@ -91,7 +93,7 @@ See [`docs/face-detection.md#technical-details`](../docs/face-detection.md#techn
 
 ## Deployment notes
 
-- The backend is intentionally not deployed anywhere by this repo. The weekly GitHub Action only regenerates the static leaderboard; if you want the realtime layer live, host the backend separately (Render / Fly.io / Railway / a LAN box) and rebuild the leaderboard with `BACKEND_WS_URL` pointing at it.
+- The backend is intentionally not deployed anywhere by this repo. The weekly GitHub Action only regenerates the static leaderboard; if you want the realtime layer live, host the backend separately (Render / Fly.io / Railway / a LAN box) and open the TV with `?ws=wss://your-host/ws`.
 - State is in-memory; do not run more than one backend process behind a load balancer unless you swap in a shared store for cooldown + WS membership.
 
 ## Required GitHub Secrets

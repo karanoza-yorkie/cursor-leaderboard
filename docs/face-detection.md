@@ -1,5 +1,7 @@
 # Face Detection → TV Display Pipeline
 
+> **See also:** [architecture.md](./architecture.md) · [api-reference.md](./api-reference.md) · [getting-started.md](./getting-started.md)
+
 ## Overview
 
 Adds a real-time face-detection layer on top of the existing weekly Cursor leaderboard. A phone running `frontend/phone.html` auto-captures camera frames, posts them to a FastAPI backend, and the backend pushes detected-person events to every connected TV over a WebSocket. The TV is the same static leaderboard page that the weekly pipeline already generates — augmented with a small WebSocket client that injects a "LIVE" detection card into the existing slider for 10 seconds, then removes it.
@@ -18,12 +20,14 @@ flowchart LR
     Phone["Phone browser<br/>frontend/phone.html<br/>(served by FastAPI)"] -->|"POST /detect"| API["FastAPI<br/>backend/main.py"]
     API -->|"PERSON_DETECTED"| WS["/ws connections"]
     WS --> TV["TV browser<br/>output/latest/leaderboard.html<br/>(weekly + realtime overlay)"]
-    Gen["src/generate_leaderboard.py<br/>(Monday GitHub Action)"] -->|"static HTML w/ ws URL baked in"| TV
+    Gen["src/generate_leaderboard.py<br/>(Monday GitHub Action)"] -->|"static HTML + inline WS client"| TV
 ```
 
 - **Backend** (`backend/main.py`): FastAPI app with `POST /detect`, `WS /ws`, `GET /phone`, `GET /health`. In-memory state. CORS open by default.
-- **Phone** (`frontend/phone.html`): `getUserMedia` → canvas → JPEG → `POST /detect` every 1.5 s. No buttons.
-- **TV**: the existing leaderboard HTML, augmented by `src/tv_realtime.py`. A WebSocket client inside the page listens for `PERSON_DETECTED`, builds a live `.slide`, pauses the rotation for 10 s, then resumes.
+- **Phone** (`frontend/phone.html`): `getUserMedia` → canvas → JPEG → `POST /detect` every ~3 s (after 3 s face dwell). No buttons.
+- **TV**: the existing leaderboard HTML with an **inline WebSocket script** emitted by `src/generate_leaderboard.py`. On `PERSON_DETECTED`, it clones a weekly slide, shows it for 10 s, and queues additional detections. The weekly carousel continues independently.
+
+> See also [architecture.md](./architecture.md) and [api-reference.md](./api-reference.md).
 
 ## Technical Details
 
@@ -92,16 +96,18 @@ sequenceDiagram
 
 - Per-person window of `COOLDOWN_SECONDS` (default 10 s).
 - Guarded by an `asyncio.Lock` so concurrent detections of the same id don't both pass through.
-- Also enforced client-side on the TV (`DEDUP_MS = 10000` in `src/tv_realtime.py`) — covers backend restarts that would otherwise reset the cooldown map.
+- Also enforced client-side on the TV via `activeIds` (email-based) for the duration of each 10 s live slide.
 
 ### TV overlay
 
-- `src/tv_realtime.py` exposes `get_realtime_styles()` and `get_realtime_script(ws_url)`. Both are interpolated into the generator's f-string in `src/generate_leaderboard.py`.
-- The existing slider IIFE now publishes `window.__leaderboard = { pause, resume }`. The realtime script:
-  1. waits for `window.__leaderboard`,
-  2. opens a WebSocket with exponential-backoff reconnects (base 1 s, cap 30 s),
-  3. on `PERSON_DETECTED`: dedupes per id within 10 s; otherwise calls `pause()`, appends a new `.slide.live-detection`, activates it, drives the progress bar for 10 s, then removes it and `resume()`s.
-- A short FIFO queue (max 5) absorbs bursts that arrive while a card is on screen.
+The live overlay is **inlined in `src/generate_leaderboard.py`** as a second `<script>` IIFE (not a separate module). It:
+
+1. Resolves the WebSocket URL at runtime (`?ws=` → `window.LEADERBOARD_WS_URL` → default `wss://cursor-leaderboard.yorkdevs.link/ws`).
+2. Opens a WebSocket with exponential-backoff reconnect (1 s → 30 s cap).
+3. On `PERSON_DETECTED`: dedupes by email, clones `.slide[data-rank]`, fills metrics, shows for 10 s, removes.
+4. Queues up to **10** pending detections (FIFO) while a slide is visible.
+
+The weekly slider IIFE is unchanged; live slides are appended as siblings and do not join the 6 s rotation.
 
 ### Face recognition
 
@@ -117,7 +123,7 @@ Real recognition backed by the [`face_recognition`](https://github.com/ageitgey/
 6. Best match index = `argmin(distances)`; accept iff `compare_faces[best_idx]` is `True`.
 7. Return `{id, name, confidence}` where `confidence = round(max(0, min(1, 1 - distance)), 3)` — derived directly from the library's distance output, no invented curve.
 
-**Threshold:** `FACE_MATCH_THRESHOLD` env (default `0.6`, matches the library's documented default). Lower = stricter.
+**Threshold:** `FACE_MATCH_THRESHOLD` env (default `0.45` in `backend/main.py`; override as needed). Lower = stricter.
 
 **Known-face roster:** loaded once at app startup from `data/faces/` (override via `FACES_DIR`).
 
@@ -175,7 +181,7 @@ All env vars are optional; sensible defaults make `uvicorn` + a locally-opened l
 
 | Env var                 | Default                  | Used by                       | Purpose                                                                                  |
 | ----------------------- | ------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `BACKEND_WS_URL`        | `ws://localhost:8000/ws` | `src/generate_leaderboard.py` | Baked into TV HTML at build time.                                                        |
+| _(TV runtime)_          | `?ws=` query param       | Generated HTML                | WebSocket URL resolved at runtime, not build time. See [configuration.md](./configuration.md). |
 | `COOLDOWN_SECONDS`      | `10`                     | `backend/main.py`             | Per-person broadcast suppression window.                                                 |
 | `MAX_IMAGE_BYTES`       | `5242880` (5 MB)         | `backend/main.py`             | Hard cap on `/detect` payload size.                                                      |
 | `ALLOWED_ORIGINS`       | `*`                      | `backend/main.py`             | Comma-separated CORS origins.                                                            |
@@ -203,10 +209,10 @@ open http://localhost:8000/phone
 open output/latest/leaderboard.html
 ```
 
-If you regenerate the leaderboard with a non-default backend URL:
+Open the TV with a WebSocket query parameter after regenerating:
 
-```bash
-BACKEND_WS_URL="wss://my-backend.example.com/ws" python3 src/pipeline.py
+```
+output/latest/leaderboard.html?ws=wss://my-backend.example.com/ws
 ```
 
 ## Edge Cases
@@ -270,20 +276,20 @@ When you switch to HTTPS, rebuild the leaderboard with `BACKEND_WS_URL` set to `
 | ---- | ---------- |
 | GitHub Pages can't host the FastAPI backend. | Backend hosting is intentionally out of scope; URL is configurable so any host works. Local `uvicorn` is the documented default. |
 | iOS browsers block `getUserMedia` on plain HTTP except `localhost`. | Documented; recommend `cloudflared` / `ngrok` / self-signed cert for LAN phone testing. |
-| WebSocket URL is baked into the TV HTML at build time. | Acceptable for v1. Re-run the pipeline (or the Monday Action) to update; future task to fetch URL at runtime. |
+| WebSocket URL must be configured per deployment. | Resolved at runtime via `?ws=` or `window.LEADERBOARD_WS_URL`; default fallback in generated HTML. |
 | In-memory cooldown / connections don't span processes. | Single-process deploy in v1. `ConnectionManager` interface is unchanged for a future Redis-backed swap. |
 | CORS `*` and no auth. | Per spec for v1. Tighten via `ALLOWED_ORIGINS` and an upstream auth proxy for production. |
 
 ## Rollout
 
 - **v1 (this change)**: local backend, mock recognition. Weekly leaderboard generation unchanged on disk except for an additional `<style>` block and a final `<script>` block. Existing TV displays continue to show the rotating Top-10 with no visible difference until a detection arrives.
-- **Backward compatibility**: `BACKEND_WS_URL` defaults to localhost; if the backend is not running, the TV silently retries the WebSocket and the leaderboard rotates as before. No regression on existing functionality.
-- **Migration**: none required. The weekly GitHub Action does not need any change; if you eventually choose a public backend, add `BACKEND_WS_URL` as a repo variable and pass it via the `Run pipeline` step's `env:`.
+- **Backward compatibility**: If the backend is not running, the TV silently retries the WebSocket and the weekly slideshow rotates as before.
+- **Migration**: none required. Pass `?ws=wss://…` on the TV URL when deploying a public backend.
 
 ## How to swap mock recognition for real ML
 
 1. Add the ML dependency (e.g. `insightface`, `opencv-python`) to `backend/requirements.txt`.
-2. Replace the body of `identify` in `backend/recognition.py`. Keep the signature: `(image_bytes: bytes) -> Optional[Person]`.
+2. Replace the body of `recognize_face` in `backend/recognition.py`. Keep the input/output contract documented in [api-reference.md](./api-reference.md).
 3. Return `None` when no face is found / no identity matches — `/detect` will then respond with `status: "no_face"` and skip broadcast.
 4. Add unit tests around the new recognizer; the rest of the pipeline does not need changes.
 
@@ -292,30 +298,14 @@ When you switch to HTTPS, rebuild the leaderboard with `BACKEND_WS_URL` set to `
 - `backend/main.py` — FastAPI app, routes, ConnectionManager, cooldown, lifespan.
 - `backend/recognition.py` — face match + email-based filename parsing.
 - `backend/week_utils.py` — `get_week()` rolling 7-day date range.
-- `backend/activity_client.py` — async daily-activity API client + aggregation.
-- `backend/requirements.txt` — FastAPI / uvicorn / httpx / face_recognition.
+- `backend/activity_client.py` — CSV metrics lookup (no runtime API calls).
+- `backend/requirements.txt` — FastAPI / uvicorn / face_recognition.
 - `frontend/phone.html` — vanilla-JS auto-capture page.
-- `src/tv_realtime.py` — CSS + JS injected into the generated leaderboard HTML.
-- `src/generate_leaderboard.py` — augmented to expose `window.__leaderboard` and to inline the realtime overlay.
+- `src/generate_leaderboard.py` — HTML generator with inlined slideshow + live overlay scripts.
 
-## Static-file inline overlay (`output/latest/leaderboard.html`, `docs/index.html`)
+## TV overlay implementation
 
-A second, self-contained implementation of the TV live overlay was injected
-directly into the **already-generated** static artifacts so live detection
-works against the currently-deployed leaderboard without waiting for the next
-weekly regeneration. It is intentionally independent of `src/tv_realtime.py`
-and the generator: only the static HTML files are touched.
-
-### What changed and why
-
-- Why: the deployed `output/latest/leaderboard.html` and `docs/index.html`
-  predate the generator-side realtime work. Re-running the full data pipeline
-  was not required (or wanted) just to ship the live overlay; a surgical edit
-  to the static files lights up the existing rendered cards immediately.
-- What: a self-contained `<script>` IIFE after the weekly slider IIFE clones an
-  existing `.slide[data-rank]` frame and fills it with detection data. **No
-  custom layout CSS** — live cards use the same classes and DOM tree as the
-  Top-10 slides (`person-section`, `stats-grid`, `active-days`, etc.).
+The live overlay is emitted by `src/generate_leaderboard.py` into every generated leaderboard. It clones an existing `.slide[data-rank]` frame and fills it with detection data. **No custom layout CSS** — live cards use the same classes as Top-10 slides (`person-section`, `stats-grid`, `active-days`, etc.).
 
 ### UI: clone-and-fill (same frame as weekly slides)
 
@@ -369,7 +359,7 @@ the WS endpoint in priority order:
    `leaderboard.html?ws=ws://192.168.1.42:8000/ws`
 2. `window.LEADERBOARD_WS_URL` global (settable from another script tag, a
    bookmarklet, or DevTools).
-3. Fallback default: `ws://localhost:8000/ws`.
+3. Fallback default: `wss://cursor-leaderboard.yorkdevs.link/ws`.
 
 The TV is expected to be opened with the `?ws=` query param pointing at the
 LAN (or `wss://` tunnel) backend.
@@ -414,31 +404,8 @@ success/failure, and slide lifecycle in the browser console.
   ladder runs; restart resumes detection.
 - Send invalid JSON / missing payload: silently dropped.
 
-### Known divergence and follow-up
+### Generated artifacts
 
-This inline overlay and the generator-injected overlay in
-[src/tv_realtime.py](../src/tv_realtime.py) are now **two implementations of
-the same behaviour** living in the same repository. They are functionally
-equivalent for the spec; they differ cosmetically (variable names, exposed
-hooks, queueing strategy details).
-
-**Important**: the next Monday GitHub Action will re-run
-[src/generate_leaderboard.py](../src/generate_leaderboard.py), which writes a
-fresh `output/latest/leaderboard.html` (and `docs/index.html`) using
-`src/tv_realtime.py`. This **will overwrite the inline overlay** with the
-generator's emitted overlay. The TV will keep working (the regenerated file is
-also live-capable), but the specific inline implementation documented here
-will not survive the next regen.
-
-Recommended follow-up (out of scope for this change):
-
-- Decide on a single source of truth: either retire `src/tv_realtime.py` and
-  hand-maintain the overlay in the generator's HTML template, or update
-  `src/tv_realtime.py` to emit the new inline implementation verbatim so the
-  next regen is byte-identical.
-
-### File map (inline overlay)
-
-- `output/latest/leaderboard.html` — receives the inline overlay alongside the
-  existing static slider markup.
-- `docs/index.html` — byte-identical copy served by GitHub Pages.
+- `output/latest/leaderboard.html` — current TV page with live overlay script.
+- `docs/index.html` — copy deployed to GitHub Pages (updated by CI each Monday).
+- Root `leaderboard.html` — legacy snapshot **without** live overlay; do not use for detection testing.

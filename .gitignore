@@ -3,3 +3,4 @@ state_fixed.json
 venv/
 .venv/
 __pycache__/
+.env
