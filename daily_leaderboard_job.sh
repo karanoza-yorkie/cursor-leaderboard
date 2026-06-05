@@ -40,6 +40,12 @@ set -a
 source .env
 set +a
 
+# Activate virtual environment and install dependencies
+"$PYTHON_BIN" -m venv venv
+source venv/bin/activate
+playwright install chromium
+pip install -r requirements.txt
+
 log "START daily leaderboard job (last 7 days)"
 
 log "Step 1: pipeline"
