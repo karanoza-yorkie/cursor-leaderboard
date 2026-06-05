@@ -26,7 +26,7 @@ Technical documentation for the cursor-leaderboard project.
 | Pipeline | `src/pipeline.py`, `src/downloader.py`, `src/merge_data.py`, `src/analysis.py`, `src/generate_leaderboard.py` |
 | Backend | `backend/main.py`, `backend/recognition.py`, `backend/activity_client.py` |
 | Frontend | `frontend/phone.html`, generated `output/latest/leaderboard.html` |
-| CI | `.github/workflows/pipeline.yml`, `daily_job.sh` |
+| CI | `.github/workflows/pipeline.yml`, `daily_leaderboard_job.sh` |
 
 ## Quick Links
 

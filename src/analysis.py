@@ -2,23 +2,11 @@ import pandas as pd
 import requests
 import os
 from pathlib import Path
-from datetime import datetime, timedelta
+
+from utils import get_last_7_days_range, get_week_folder
 
 # Required secret: fail fast if missing instead of embedding credentials.
 DAILY_ACTIVITY_API_KEY = os.environ["DAILY_ACTIVITY_API_KEY"]
-
-# ============================================================
-# HELPERS (same as other files)
-# ============================================================
-def get_last_week():
-    today = datetime.now().date()
-    last_monday = today - timedelta(days=today.weekday() + 7)
-    last_friday = last_monday + timedelta(days=4)
-    return last_monday, last_friday
-
-def get_week_folder():
-    start, end = get_last_week()
-    return f"{start}_{end}"
 
 def normalize(col):
     return (col - col.min()) / (col.max() - col.min() + 1e-9)
@@ -42,7 +30,7 @@ def run_analysis():
         "Content-Type": "application/json"
     }
 
-    start, end = get_last_week()
+    start, end = get_last_7_days_range()
 
     payload = {
         "startDate": str(start),

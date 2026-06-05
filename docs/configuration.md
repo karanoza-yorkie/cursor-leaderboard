@@ -22,7 +22,7 @@ Optional for face roster sync in CI:
 
 ## Local `.env` File
 
-Used by `daily_job.sh` (not loaded automatically by `pipeline.py` or uvicorn).
+Used by `daily_leaderboard_job.sh` (not loaded automatically by `pipeline.py` or uvicorn).
 
 ```bash
 HUB_API_KEY=your_hub_key
@@ -59,7 +59,7 @@ All are optional; defaults allow local development.
 | `FACE_MATCH_THRESHOLD` | `0.45` in code / `0.6` in README | Max face distance for match (lower = stricter) |
 | `FACE_DETECT_MODEL` | `hog` | dlib detector: `hog` (CPU) or `cnn` (GPU) |
 | `REQUIRE_KNOWN_FACES` | `1` | Refuse startup if face roster is empty |
-| `ALL_USERS_CSV` | `data/processed/{week}/all_users.csv` | Metrics CSV for live detections |
+| `ALL_USERS_CSV` | `data/processed/{start}_{end}/all_users.csv` | Metrics CSV for live detections (rolling 7-day folder) |
 
 > **Note:** `FACE_MATCH_THRESHOLD` default is `0.45` in `backend/main.py` but documented as `0.6` in `backend/README.md`. Override explicitly in production.
 
@@ -78,12 +78,22 @@ Debug mode: append `?live_debug=1` to log overlay events in the browser console.
 
 ---
 
-## `daily_job.sh` Settings
+## `daily_leaderboard_job.sh` Settings
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PYTHON_BIN` | `python3` | Python interpreter |
-| `LOG_RETENTION_DAYS` | `30` | Delete `logs/*.log` older than N days (`0` = disable) |
+| `PYTHON_BIN` | `python3` | Python interpreter for pipeline and face download |
+
+The script sources `.env`, runs `src/pipeline.py` and `download_faces.py`, then `git add` / `git commit` / `git push` when `data/`, `output/`, or `logs/` changed. Logs append to `logs/YYYY-MM-DD.log`.
+
+**Manual run:**
+
+```bash
+chmod +x daily_leaderboard_job.sh
+./daily_leaderboard_job.sh
+```
+
+**Cron example** (7:30 AM IST on a UTC server): `30 2 * * * /path/to/cursor_leaderboard/daily_leaderboard_job.sh`
 
 ---
 

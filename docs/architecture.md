@@ -80,7 +80,7 @@ cursor_leaderboard/
 │   ├── merge_data.py                # CSV joins
 │   ├── analysis.py                  # Scoring + external API
 │   ├── generate_leaderboard.py      # HTML generator + live overlay JS
-│   └── utils.py                     # Directory helpers
+│   └── utils.py                     # Date range + directory helpers
 ├── frontend/
 │   └── phone.html                   # Camera capture page
 ├── data/
@@ -94,7 +94,7 @@ cursor_leaderboard/
 │   ├── index.html                   # GitHub Pages copy of leaderboard
 │   └── *.md                         # Documentation
 ├── download_faces.py                # York Hub profile photo sync
-└── daily_job.sh                     # Local cron wrapper (pipeline + faces)
+└── daily_leaderboard_job.sh         # Daily EC2 cron (pipeline + faces + git)
 ```
 
 ---
@@ -103,7 +103,7 @@ cursor_leaderboard/
 
 ### Flow
 
-1. **Download** (`src/downloader.py`) — Playwright opens `cursor.sh/dashboard` using saved session state (`state_fixed.json`), navigates Analytics/Usage, sets last Mon–Fri date range, downloads `leaderboard.csv` and `usage.csv` into `data/raw/{week}/`.
+1. **Download** (`src/downloader.py`) — Playwright opens `cursor.sh/dashboard` using saved session state (`state_fixed.json`), navigates Analytics/Usage, sets the rolling last-7-days date range (IST boundaries via `get_last_7_days_range()`), downloads `leaderboard.csv` and `usage.csv` into `data/raw/{week}/`.
 
 2. **Merge** (`src/merge_data.py`) — Joins `employee_list.csv`, Cursor leaderboard, and team usage on email → `data/processed/{week}/merged.csv`.
 
@@ -121,7 +121,18 @@ See [data-pipeline.md](./data-pipeline.md) for step-by-step detail.
 |---------|-------------|
 | GitHub Actions (Mon 10:00 UTC) | `python src/pipeline.py` |
 | Manual workflow dispatch | Same |
-| Local cron / manual | `./daily_job.sh` (also runs `download_faces.py`) |
+| Local cron / EC2 daily | `./daily_leaderboard_job.sh` (pipeline + `download_faces.py` + git push) |
+| Manual | `python src/pipeline.py` or `./daily_leaderboard_job.sh` |
+
+### Daily automation (EC2)
+
+[`daily_leaderboard_job.sh`](../daily_leaderboard_job.sh) at the repo root:
+
+1. Loads `.env` (API keys)
+2. Runs `src/pipeline.py` then `download_faces.py`
+3. Commits and pushes `data/`, `output/`, `logs/` when changed
+
+Commit message: `chore(leaderboard): generate daily leaderboard data (last 7 days)`. See [configuration.md](./configuration.md) for cron setup.
 
 ---
 

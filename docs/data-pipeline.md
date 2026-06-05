@@ -21,18 +21,29 @@ generate()        # Step 4 (generate_leaderboard.main)
 
 ---
 
-## Week Folder Convention
+## Date Range & Folder Convention
 
-All pipeline modules use the same **last complete Mon–Fri work week**:
+All pipeline modules use the same **rolling last 7 complete days** via `src/utils.py`:
 
 ```python
-# Shared logic across downloader, merge_data, analysis, generate_leaderboard
-last_monday = today - timedelta(days=today.weekday() + 7)
-last_friday = last_monday + timedelta(days=4)
-week_folder = f"{last_monday}_{last_friday}"  # e.g. 2026-05-25_2026-05-29
+from utils import get_last_7_days_range, get_week_folder
+
+start, end = get_last_7_days_range()
+# end   = yesterday (IST, inclusive through 23:59:59)
+# start = end - 6 days (from 00:00:00)
+week_folder = get_week_folder()  # e.g. 2026-05-29_2026-06-04
 ```
 
-Files for that week live under:
+**Why rolling 7 days:** Daily cron on EC2 and weekly GitHub Actions both need a stable window that never includes partial “today” data. IST calendar boundaries keep EC2 (often UTC) aligned with local expectations.
+
+| Run day (IST) | End (yesterday) | Start | Days |
+|---------------|-------------------|-------|------|
+| Monday Jun 8 | Sun Jun 7 | Mon Jun 1 | 7 |
+| Sunday Jun 7 | Sat Jun 6 | Sun May 31 | 7 |
+| Mar 1 | Feb 28 | Feb 22 | 7 (month boundary) |
+| Jan 1 | Dec 31 (prior year) | Dec 25 (prior year) | 7 (year boundary) |
+
+Files for the active window live under:
 
 - `data/raw/{week_folder}/`
 - `data/processed/{week_folder}/`
@@ -49,7 +60,7 @@ Files for that week live under:
 1. Launches headless Chromium via Playwright.
 2. Loads Cursor session from `state_fixed.json` (Playwright `storage_state`).
 3. Opens `https://cursor.sh/dashboard` → Analytics tab.
-4. Sets date range to last Mon–Fri using the dashboard date picker.
+4. Sets date range to the rolling last 7 days using the dashboard date picker.
 5. Downloads **Usage Leaderboard CSV** (5th "Download CSV" button) → `leaderboard.csv`.
 6. Switches to Usage tab, sets same date range, exports → `usage.csv`.
 
@@ -188,7 +199,7 @@ Avatar paths in weekly slides use `/faces/{name-slug}_{email}.png` (served by Fa
 ## Face Photo Sync (Optional)
 
 **Script:** `download_faces.py`  
-**Not part of `pipeline.py`** — run separately or via `daily_job.sh`.
+**Not part of `pipeline.py`** — run separately or via `daily_leaderboard_job.sh`.
 
 1. Calls `GET https://api.hub.york.ie/api/external/users/active` with `EXTERNAL_API_SECRET`.
 2. Downloads each user's `profile_image` into `data/faces/`.
@@ -221,10 +232,11 @@ export DAILY_ACTIVITY_API_KEY=...
 python src/pipeline.py
 
 # Full local job (pipeline + face download)
-./daily_job.sh   # reads .env, writes logs/YYYY-MM-DD.log
+chmod +x daily_leaderboard_job.sh
+./daily_leaderboard_job.sh   # reads .env, writes logs/YYYY-MM-DD.log
 ```
 
-Logs: `logs/pipeline.log` (from pipeline) and `logs/YYYY-MM-DD.log` (from daily_job.sh).
+Logs: `logs/pipeline.log` (from pipeline) and `logs/YYYY-MM-DD.log` (from daily_leaderboard_job.sh).
 
 ---
 

@@ -2,21 +2,12 @@ import csv
 import sys
 import os
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import requests
 from urllib.parse import quote
 
-# ── SAME helper (consistent across all files) ────────────────────────────────
-def get_last_week():
-    today = datetime.now().date()
-    last_monday = today - timedelta(days=today.weekday() + 7)
-    last_friday = last_monday + timedelta(days=4)
-    return last_monday, last_friday
-
-def get_week_folder():
-    start, end = get_last_week()
-    return f"{start}_{end}"
+from utils import get_week_folder
 
 # ── Configuration (ONLY CHANGED HERE) ────────────────────────────────────────
 SLIDE_DURATION_MS = 6000

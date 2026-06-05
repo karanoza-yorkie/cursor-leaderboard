@@ -3,7 +3,7 @@ from downloader import run_download
 from merge_data import run_merge
 from analysis import run_analysis
 from generate_leaderboard import main as generate
-from utils import ensure_dirs
+from utils import ensure_dirs, get_last_7_days_range
 
 ensure_dirs()
 
@@ -14,7 +14,8 @@ logging.basicConfig(
 )
 
 def run_pipeline():
-    logging.info("🚀 START PIPELINE")
+    start, end = get_last_7_days_range()
+    logging.info("🚀 START PIPELINE (date range: %s → %s)", start, end)
 
     try:
         logging.info("Step 1: Downloading reports")

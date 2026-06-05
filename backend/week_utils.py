@@ -3,28 +3,30 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_SRC = _REPO_ROOT / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from utils import get_last_7_days_range, get_week_folder  # noqa: E402
 
 
 def get_week() -> tuple[str, str]:
-    """Rolling 7-day window ending today (inclusive).
+    """Rolling 7-day window ending yesterday (inclusive).
 
     Returns ``(startDate, endDate)`` as ISO ``YYYY-MM-DD`` strings.
     """
-
-    end = date.today()
-    start = end - timedelta(days=6)
+    start, end = get_last_7_days_range()
     return start.isoformat(), end.isoformat()
 
 
 def get_pipeline_week_folder() -> str:
-    """Week folder name used by ``src/analysis.py`` (last Mon–Fri block)."""
+    """Processed-data folder name for the rolling last-7-days window."""
 
-    today = date.today()
-    last_monday = today - timedelta(days=today.weekday() + 7)
-    last_friday = last_monday + timedelta(days=4)
-    return f"{last_monday}_{last_friday}"
+    return get_week_folder()
 
 
 def resolve_all_users_csv(repo_root: Path) -> Path:

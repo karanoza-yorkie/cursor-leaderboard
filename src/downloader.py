@@ -138,8 +138,10 @@
 import time
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from playwright.sync_api import sync_playwright
+
+from utils import get_last_7_days_range, get_week_folder
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -149,12 +151,6 @@ RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 STATE_FILE = "state_fixed.json"
 
-
-def get_last_week():
-    today = datetime.now().date()
-    last_monday = today - timedelta(days=today.weekday() + 7)
-    last_friday = last_monday + timedelta(days=4)
-    return last_monday, last_friday
 
 def get_last_week_test():
     # TEST MODE — swap to get_last_week_real() for production
@@ -341,14 +337,8 @@ def download_usage_leaderboard(page, file_path):
     log.info("Leaderboard saved: %s", file_path)
 
 
-# # ✅ NEW: dynamic folder
-def get_week_folder():
-    start, end = get_last_week()
-    return f"{start}_{end}"
-
-
 def run_download():
-    start, end = get_last_week()
+    start, end = get_last_7_days_range()
 
     start_label = start.strftime("%d%b")
     end_label   = end.strftime("%d%b")

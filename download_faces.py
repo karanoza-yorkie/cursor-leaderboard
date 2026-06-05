@@ -27,7 +27,13 @@ import requests
 USERS_URL = "https://api.hub.york.ie/api/external/users/active"
 REPO_ROOT = Path(__file__).resolve().parent
 FACES_DIR = REPO_ROOT / "data" / "faces"
+SRC_DIR = REPO_ROOT / "src"
 REQUEST_TIMEOUT = (10, 30)  # (connect, read) seconds
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from utils import get_last_7_days_range  # noqa: E402
 
 _ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 _NAME_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9.\-]*$")
@@ -233,6 +239,8 @@ def main() -> None:
         raise SystemExit(1)
 
     FACES_DIR.mkdir(parents=True, exist_ok=True)
+    start, end = get_last_7_days_range()
+    logger.info("Active leaderboard date range: %s → %s", start, end)
     logger.info("Saving faces to %s", FACES_DIR)
 
     users = fetch_active_users(api_key)

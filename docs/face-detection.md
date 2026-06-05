@@ -161,7 +161,7 @@ If image URLs return 401/403 without auth, the script retries the download with 
 
 ### Live metrics (CSV)
 
-After a face match, `backend/activity_client.py` looks up the email in `all_users.csv` (default path: `data/processed/{last_monday}_{last_friday}/all_users.csv`, same week folder as `src/analysis.py`). Fields are copied directly from the CSV — no runtime aggregation:
+After a face match, `backend/activity_client.py` looks up the email in `all_users.csv` (default path: `data/processed/{start}_{end}/all_users.csv`, same rolling 7-day folder as `src/utils.get_week_folder()`). Fields are copied directly from the CSV — no runtime aggregation:
 
 | Payload field | CSV column |
 |---------------|------------|
@@ -297,7 +297,7 @@ When you switch to HTTPS, rebuild the leaderboard with `BACKEND_WS_URL` set to `
 
 - `backend/main.py` — FastAPI app, routes, ConnectionManager, cooldown, lifespan.
 - `backend/recognition.py` — face match + email-based filename parsing.
-- `backend/week_utils.py` — `get_week()` rolling 7-day date range.
+- `backend/week_utils.py` — `get_week()` / `get_pipeline_week_folder()` rolling 7-day date range (delegates to `src/utils.py`).
 - `backend/activity_client.py` — CSV metrics lookup (no runtime API calls).
 - `backend/requirements.txt` — FastAPI / uvicorn / face_recognition.
 - `frontend/phone.html` — vanilla-JS auto-capture page.

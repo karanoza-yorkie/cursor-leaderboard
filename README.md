@@ -78,7 +78,7 @@ See [docs/face-detection.md](docs/face-detection.md) for HTTPS requirements on r
 
 ## CI
 
-GitHub Actions runs every **Monday 10:00 UTC** (`.github/workflows/pipeline.yml`).
+GitHub Actions runs every **Monday 10:00 UTC** (`.github/workflows/pipeline.yml`). The pipeline uses a **rolling last-7-days** data window (IST boundaries); EC2 can run `./daily_leaderboard_job.sh` on a daily schedule for fresher data.
 
 Required secrets: `HUB_API_KEY`, `DAILY_ACTIVITY_API_KEY`, `CURSOR_STATE`.
 

@@ -1,20 +1,7 @@
 import pandas as pd
 from pathlib import Path
-from datetime import datetime, timedelta
 
-# -----------------------------
-# SAME helper as downloader
-# -----------------------------
-def get_last_week():
-    today = datetime.now().date()
-    last_monday = today - timedelta(days=today.weekday() + 7)
-    last_friday = last_monday + timedelta(days=4)
-    return last_monday, last_friday
-
-def get_week_folder():
-    start, end = get_last_week()
-    return f"{start}_{end}"
-
+from utils import get_week_folder
 
 # -----------------------------
 # MAIN MERGE FUNCTION

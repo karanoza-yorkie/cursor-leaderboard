@@ -32,7 +32,7 @@ pip install -r backend/requirements.txt
 
 ## 2. Configure Environment
 
-Create `.env` at the repo root (for `daily_job.sh`):
+Create `.env` at the repo root (for `daily_leaderboard_job.sh`):
 
 ```bash
 HUB_API_KEY=your_key_here
@@ -65,11 +65,11 @@ This executes: download → merge → analysis → generate HTML.
 - `output/latest/leaderboard.html`
 - `output/history/{week}.html`
 
-Or use the wrapper script (pipeline + face download):
+Or use the daily wrapper script (pipeline + face download + git push):
 
 ```bash
-chmod +x daily_job.sh
-./daily_job.sh
+chmod +x daily_leaderboard_job.sh
+./daily_leaderboard_job.sh
 ```
 
 ---
@@ -177,7 +177,7 @@ After a successful run, `docs/index.html` is updated and committed for GitHub Pa
 | Problem | Likely cause | Fix |
 |---------|--------------|-----|
 | Pipeline fails at download | Missing/expired `state_fixed.json` | Re-export Cursor session; update `CURSOR_STATE` secret |
-| `HUB_API_KEY` / `DAILY_ACTIVITY_API_KEY` error | Env not set | Export vars or use `.env` + `daily_job.sh` |
+| `HUB_API_KEY` / `DAILY_ACTIVITY_API_KEY` error | Env not set | Export vars or use `.env` + `daily_leaderboard_job.sh` |
 | Backend won't start | Empty `data/faces/` | Run `download_faces.py` or set `REQUIRE_KNOWN_FACES=0` |
 | Phone shows "HTTPS required" | Plain HTTP from LAN IP | Use `cloudflared` or mkcert (see [backend/README.md](../backend/README.md)) |
 | TV never shows live slide | Wrong HTML file or WS URL | Use `output/latest/` or `docs/index.html` with `?ws=` param |
