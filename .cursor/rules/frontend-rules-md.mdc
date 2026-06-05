@@ -1,0 +1,132 @@
+---
+alwaysApply: true
+---
+
+# Frontend Rules — Cursor Leaderboard
+
+These rules apply to **all frontend/UI code** in the cursor-leaderboard project, including:
+- Generated HTML (TV display)
+- Realtime WebSocket overlay logic
+- Phone camera capture page
+
+This project intentionally uses **Vanilla HTML/CSS/JS** only.
+
+---
+
+## 1. Tech Stack (Non-Negotiable)
+- Vanilla HTML
+- Vanilla CSS
+- Vanilla JavaScript
+- No frameworks (❌ React, ❌ Vue, ❌ Angular)
+- No bundlers or build steps
+- One-file output preferred for TV (`leaderboard.html`)
+
+---
+
+## 2. Core Design Principles
+- Generated HTML must be **self-contained**
+- UI must work in:
+  - Chrome
+  - Safari
+  - TV browsers
+- No runtime dependencies except:
+  - Browser APIs
+  - WebSocket
+- Readability > cleverness
+
+---
+
+## 3. Generated HTML Rules (TV)
+- All logic must be embedded via `<script>`
+- Avoid global namespace pollution
+- Wrap logic in IIFEs
+- Never hardcode WebSocket URLs
+  - Must resolve dynamically via:
+    1. `?ws=` query param
+    2. `window.LEADERBOARD_WS_URL`
+    3. fallback default
+- DOM updates only (no reloads)
+
+---
+
+## 4. Slider / Overlay Rules
+- Slider state is **in-memory**
+- Slides must:
+  - Appear immediately
+  - Auto-remove after timeout
+- Duplicate detection must be prevented:
+  - Same email within cooldown → ignore
+- Queue must be FIFO
+- Never block the main slideshow
+
+---
+
+## 5. Unknown / Error UI Handling
+- Always reuse the **same slide frame**
+- Unknown user:
+  - Shorter display duration
+  - Clear “User not found” messaging
+- Data missing:
+  - Show name + image
+  - Replace metrics with “Data not found”
+- UI must never appear broken or empty
+
+---
+
+## 6. Phone Camera Page Rules
+- Camera must auto-start (no buttons)
+- Use `getUserMedia` safely:
+  - Handle unsupported browsers gracefully
+- Capture logic:
+  - Delay before first frame
+  - Throttled frame sending
+- Never spam backend
+- Show only preview (no UI clutter)
+
+---
+
+## 7. Performance Rules
+- Avoid expensive DOM operations in loops
+- Use `requestAnimationFrame` when animating
+- Avoid layout thrashing
+- Cleanup timers and listeners
+
+---
+
+## 8. Security Rules
+- Never expose secrets in JS
+- Do not trust WebSocket payload blindly
+- Sanitize injected text
+- Restrict dynamic file paths
+
+---
+
+## 9. Documentation Requirement (Mandatory)
+Every UI change must include:
+- Update to relevant `.md` doc:
+  - `face-detection.md`
+  - `api-reference.md`
+  - or `architecture.md`
+- Explanation of:
+  - What changed
+  - Why it changed
+  - Any UX impact
+
+---
+
+## 10. Commit Message Rules
+- feat(frontend): add live queue preview on TV slide
+- fix(frontend): delay camera capture to avoid unknown detection
+- perf(frontend): reduce DOM updates in overlay
+- docs(frontend): update face-detection flow
+
+
+---
+
+## 11. AI Prompting Rule
+When using AI:
+- Always ask for:
+  - Browser compatibility check
+  - Runtime behavior explanation
+  - Failure/edge cases
+- Output must be copy-paste runnable

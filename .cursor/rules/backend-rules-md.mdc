@@ -1,0 +1,131 @@
+---
+alwaysApply: true
+---
+
+# Backend Rules — Cursor Leaderboard
+
+These rules apply to **all backend and pipeline code**, including:
+- FastAPI realtime service
+- Face recognition logic
+- CSV-based analytics pipeline
+- One-off scripts and cron jobs
+
+---
+
+## 1. Tech Stack
+- Python 3.11
+- FastAPI (async)
+- WebSockets
+- pandas
+- face_recognition (dlib)
+- No database
+- CSV files as source of truth
+
+---
+
+## 2. Architectural Principles
+- Stateless by design
+- In-memory state only
+- Single-process assumption
+- Batch pipeline ≠ realtime backend
+
+---
+
+## 3. Pipeline Rules (src/)
+- Each step must be:
+  - Deterministic
+  - Idempotent
+- Inputs and outputs must be explicit
+- Never mutate previous week’s data
+- Always write logs
+
+---
+
+## 4. CSV Handling Rules
+- Never load CSV repeatedly in hot paths
+- Cache CSV in memory with mtime check
+- Normalize emails to lowercase
+- Fail loudly if required columns missing
+
+---
+
+## 5. Face Recognition Rules
+- Load encodings once at startup
+- Use configurable threshold
+- Do NOT assume every face is employee
+- If confidence is below threshold:
+  - Treat as Unknown
+  - Do not fetch metrics
+- Prefer false-negative over false-positive
+
+---
+
+## 6. FastAPI Rules
+- Fully async endpoints
+- CPU-heavy tasks must use:
+  - `asyncio.to_thread`
+- WebSocket broadcasts must:
+  - Respect cooldown
+  - Be non-blocking
+- CORS must be configurable
+
+---
+
+## 7. State & Cooldown Rules
+- Cooldown per email
+- Unknown detections also rate-limited
+- All state resets on restart (by design)
+- Do not introduce DB silently
+
+---
+
+## 8. Error Handling & Logging
+- Use structured logging
+- Levels:
+  - INFO → lifecycle events
+  - DEBUG → per-detection details
+  - WARNING → data mismatch / missing CSV rows
+  - ERROR → face processing / IO failures
+- Never crash uvicorn on bad input
+
+---
+
+## 9. Security Rules
+- Never hardcode API keys
+- Use environment variables only
+- Validate file paths strictly
+- Prevent path traversal in static routes
+
+---
+
+## 10. Script Rules (cron / maintenance)
+- Must support dry-run (if destructive)
+- Must log start/end
+- Must validate inputs
+- Safe to run multiple times
+
+---
+
+## 11. Documentation Requirement (Mandatory)
+Every backend change must update:
+- `architecture.md` (if flow changes)
+- `face-detection.md` (if detection logic changes)
+- `configuration.md` (if env vars change)
+
+---
+
+## 12. Commit Message Rules
+- feat(backend): add face confidence threshold guard
+- fix(backend): prevent false-positive employee detection
+- perf(backend): cache all_users.csv with mtime
+- docs(backend): clarify realtime overlay constraints
+
+
+---
+
+## 13. AI Prompting Rule
+AI output must:
+- Respect no-DB constraint
+- Be production-safe
+- Include edge cases
+- Include documentation + commit message
