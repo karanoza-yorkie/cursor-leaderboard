@@ -46,6 +46,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 pip install -r backend/requirements.txt
 playwright install chromium
+playwright install-deps 
 
 log "START daily leaderboard job (last 7 days)"
 
